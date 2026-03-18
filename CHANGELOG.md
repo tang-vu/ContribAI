@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-03-18
+## [0.6.0] - 2026-03-18
+
+### Added
+- **Interactive TUI**: Rich-based CLI interactive mode for browsing, selecting, and approving contributions
+- **Contribution Leaderboard**: PR merge/close rate tracking with repo rankings and type-based stats
+- **Multi-language Analyzers**: 19 analysis rules for JavaScript/TypeScript (7), Go (6), Rust (6)
+- **Notification System**: Slack webhook, Discord embeds, Telegram Bot API integration
+- 3 new CLI commands: `interactive`, `leaderboard`, `notify-test`
+- `NotificationConfig` in config with per-channel and event-type toggles
+- `httpx` dependency for notification HTTP clients
+- 30 new tests (total: 251 tests)
+
+
 
 ### Added
 - **Plugin System**: Entry-point based `AnalyzerPlugin` / `GeneratorPlugin` with auto-discovery

@@ -574,5 +574,128 @@ def _print_result(result, dry_run: bool):
             console.print(f"  • {e}")
 
 
+@cli.command("interactive")
+@click.pass_context
+def interactive(ctx):
+    """Interactive TUI mode for browsing and contributing."""
+    from contribai.cli.tui import run_interactive
+
+    config = load_config(ctx.obj["config_path"])
+    run_interactive(config)
+
+
+@cli.command("leaderboard")
+@click.option(
+    "--limit",
+    default=20,
+    help="Number of entries",
+)
+@click.pass_context
+def show_leaderboard(ctx, limit):
+    """Show contribution leaderboard and success rates."""
+    from contribai.core.leaderboard import Leaderboard
+    from contribai.orchestrator.memory import Memory
+
+    async def _run():
+        config = load_config(ctx.obj["config_path"])
+        memory = Memory(config.storage.resolved_db_path)
+        await memory.init()
+
+        board = Leaderboard(memory._db)
+        stats = await board.get_overall_stats()
+        rankings = await board.get_repo_rankings(limit=limit)
+        type_stats = await board.get_type_stats()
+
+        console.print(
+            Panel(
+                f"Total PRs: [bold]{stats['total']}[/bold]\n"
+                f"Merged: [green]{stats['merged']}[/green] | "
+                f"Closed: [red]{stats['closed']}[/red] | "
+                f"Open: [yellow]{stats['open']}[/yellow]\n"
+                f"Merge Rate: [bold]{stats['merge_rate']}%[/bold]",
+                title="Contribution Leaderboard",
+            )
+        )
+
+        if rankings:
+            table = Table(title="Repo Rankings")
+            table.add_column("Repo", style="cyan")
+            table.add_column("Total")
+            table.add_column("Merged", style="green")
+            table.add_column("Closed", style="red")
+            table.add_column("Open", style="yellow")
+            table.add_column("Rate")
+
+            for r in rankings:
+                rate_color = (
+                    "green" if r.merge_rate >= 70 else "yellow" if r.merge_rate >= 40 else "red"
+                )
+                table.add_row(
+                    r.repo,
+                    str(r.total_prs),
+                    str(r.merged),
+                    str(r.closed),
+                    str(r.open),
+                    f"[{rate_color}]{r.merge_rate:.0f}%[/{rate_color}]",
+                )
+            console.print(table)
+
+        if type_stats:
+            table2 = Table(title="By Contribution Type")
+            table2.add_column("Type", style="cyan")
+            table2.add_column("Total")
+            table2.add_column("Merged", style="green")
+            table2.add_column("Rate")
+            for t in type_stats:
+                table2.add_row(
+                    t.type,
+                    str(t.total),
+                    str(t.merged),
+                    f"{t.merge_rate:.0f}%",
+                )
+            console.print(table2)
+
+        await memory.close()
+
+    asyncio.run(_run())
+
+
+@cli.command("notify-test")
+@click.pass_context
+def notify_test(ctx):
+    """Send a test notification to configured channels."""
+    from contribai.notifications.notifier import (
+        NotificationEvent,
+        Notifier,
+    )
+
+    config = load_config(ctx.obj["config_path"])
+    nc = config.notifications
+
+    notifier = Notifier(
+        slack_webhook=nc.slack_webhook,
+        discord_webhook=nc.discord_webhook,
+        telegram_token=nc.telegram_token,
+        telegram_chat_id=nc.telegram_chat_id,
+    )
+
+    if not notifier.is_configured:
+        console.print("[yellow]No notification channels configured in config.yaml[/yellow]")
+        return
+
+    async def _send():
+        await notifier.notify(
+            NotificationEvent(
+                event_type="run_complete",
+                title="Test Notification",
+                message="ContribAI notifications working!",
+            )
+        )
+        await notifier.close()
+
+    asyncio.run(_send())
+    console.print("[green]Test notification sent![/green]")
+
+
 if __name__ == "__main__":
     cli()

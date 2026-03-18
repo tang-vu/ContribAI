@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ContribAI Dashboard",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -96,7 +96,7 @@ async def dashboard():
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "0.5.0"}
+    return {"status": "ok", "version": "0.6.0"}
 
 
 @app.get("/api/stats")

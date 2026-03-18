@@ -218,4 +218,4 @@ class TestWebhooks:
         client = TestClient(app)
         resp = client.get("/api/health")
         assert resp.status_code == 200
-        assert resp.json()["version"] == "0.5.0"
+        assert resp.json()["version"] == "0.6.0"

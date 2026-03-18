@@ -130,6 +130,18 @@ class QuotaConfig(BaseModel):
     llm_daily_tokens: int = 1_000_000
 
 
+class NotificationConfig(BaseModel):
+    """Notification channel configuration."""
+
+    slack_webhook: str = ""
+    discord_webhook: str = ""
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+    on_merge: bool = True
+    on_close: bool = True
+    on_run_complete: bool = True
+
+
 class ContribAIConfig(BaseModel):
     """Root configuration for ContribAI."""
 
@@ -143,6 +155,7 @@ class ContribAIConfig(BaseModel):
     web: WebConfig = Field(default_factory=WebConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     quota: QuotaConfig = Field(default_factory=QuotaConfig)
+    notifications: NotificationConfig = Field(default_factory=NotificationConfig)
 
 
 def load_config(path: str | Path | None = None) -> ContribAIConfig:
