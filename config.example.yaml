@@ -5,7 +5,7 @@ github:
   token: "ghp_your_github_personal_access_token"
   max_repos_per_run: 5
   max_prs_per_day: 10
-  rate_limit_buffer: 100  # keep this many API calls in reserve
+  rate_limit_buffer: 100
 
 llm:
   provider: "gemini"  # gemini | openai | anthropic | ollama
@@ -45,8 +45,8 @@ contribution:
   max_files_per_pr: 10
   run_tests_before_pr: true
   style:
-    commit_convention: "conventional"  # conventional | angular | none
-    pr_description_style: "detailed"   # minimal | detailed
+    commit_convention: "conventional"
+    pr_description_style: "detailed"
 
 discovery:
   languages:
@@ -56,8 +56,32 @@ discovery:
   stars_range: [50, 10000]
   min_last_activity_days: 30
   require_contributing_guide: false
-  topics: []  # filter by repo topics, empty = any
+  topics: []
 
 storage:
   db_path: "~/.contribai/memory.db"
   cache_ttl_hours: 24
+
+# ── Phase 4+ Configuration ──────────────────────────
+
+pipeline:
+  max_concurrent_repos: 3         # parallel repo processing
+  timeout_per_repo_sec: 300
+
+scheduler:
+  enabled: false
+  cron: "0 */6 * * *"             # every 6 hours
+  timezone: "UTC"
+  max_concurrent: 3
+
+web:
+  host: "127.0.0.1"
+  port: 8787
+  enabled: true
+  api_keys: []                     # ["cai_xxx"] for auth, empty = no auth
+  webhook_secret: ""               # GitHub webhook secret for HMAC
+
+quota:
+  github_daily_limit: 5000
+  llm_daily_limit: 1000
+  llm_daily_tokens: 1000000

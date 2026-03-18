@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  # ── Dashboard mode ─────────────────────────────────
+  dashboard:
+    build: .
+    container_name: contribai-dashboard
+    command: ["serve", "--host", "0.0.0.0"]
+    ports:
+      - "8787:8787"
+    volumes:
+      - contribai-data:/home/contribai/.contribai
+      - ./config.yaml:/home/contribai/config.yaml:ro
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8787/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Scheduler mode ─────────────────────────────────
+  scheduler:
+    build: .
+    container_name: contribai-scheduler
+    command: ["schedule"]
+    volumes:
+      - contribai-data:/home/contribai/.contribai
+      - ./config.yaml:/home/contribai/config.yaml:ro
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      dashboard:
+        condition: service_healthy
+
+  # ── One-shot run ───────────────────────────────────
+  # Usage: docker compose run --rm runner run --dry-run
+  runner:
+    build: .
+    container_name: contribai-runner
+    volumes:
+      - contribai-data:/home/contribai/.contribai
+      - ./config.yaml:/home/contribai/config.yaml:ro
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    profiles:
+      - cli
+
+volumes:
+  contribai-data:
+    driver: local

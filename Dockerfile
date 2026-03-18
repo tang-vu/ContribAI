@@ -28,7 +28,14 @@ RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 RUN mkdir -p /home/contribai/.contribai && \
     chown -R contribai:contribai /home/contribai
 
+# Expose dashboard port
+EXPOSE 8787
+
 USER contribai
+
+# Health check for dashboard mode
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8787/api/health')" || exit 1
 
 # Default: show help
 ENTRYPOINT ["contribai"]

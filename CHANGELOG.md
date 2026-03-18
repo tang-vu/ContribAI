@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-18
+
+### Added
+- **Plugin System**: Entry-point based `AnalyzerPlugin` / `GeneratorPlugin` with auto-discovery
+- **Webhooks**: GitHub webhook receiver (issues.opened, issues.labeled, push) with HMAC-SHA256
+- **Usage Quotas**: Daily tracking for GitHub API calls, LLM calls, and token usage
+- **API Key Auth**: `X-API-Key` header auth for dashboard mutation endpoints
+- **Docker Compose**: 3-service setup (dashboard, scheduler, runner) with shared volumes
+- Dockerfile EXPOSE 8787 + healthcheck
+- Updated README with Phase 4+5 features, Docker docs, plugin guide
+- Updated config.example.yaml with all new sections
+- 24 new tests (total: 221 tests)
+
+
+
 ## [0.4.0] - 2026-03-18
 
 ### Added

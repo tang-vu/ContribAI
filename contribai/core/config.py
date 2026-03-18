@@ -111,6 +111,8 @@ class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8787
     enabled: bool = True
+    api_keys: list[str] = Field(default_factory=list)
+    webhook_secret: str = ""
 
 
 class PipelineConfig(BaseModel):
@@ -118,6 +120,14 @@ class PipelineConfig(BaseModel):
 
     max_concurrent_repos: int = 3
     timeout_per_repo_sec: int = 300
+
+
+class QuotaConfig(BaseModel):
+    """API usage quota configuration."""
+
+    github_daily_limit: int = 5000
+    llm_daily_limit: int = 1000
+    llm_daily_tokens: int = 1_000_000
 
 
 class ContribAIConfig(BaseModel):
@@ -132,6 +142,7 @@ class ContribAIConfig(BaseModel):
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    quota: QuotaConfig = Field(default_factory=QuotaConfig)
 
 
 def load_config(path: str | Path | None = None) -> ContribAIConfig:
