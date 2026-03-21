@@ -6,8 +6,8 @@ ContribAI discovers open source repositories, analyzes them for improvement oppo
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-287%20passed-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](#)
+[![Tests](https://img.shields.io/badge/tests-213%20passed-brightgreen)](#)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](#)
 
 ---
 
@@ -26,6 +26,7 @@ ContribAI discovers open source repositories, analyzes them for improvement oppo
 
 ### Hunt Mode (v0.11.0+)
 - **Autonomous hunting** – Discovers repos across GitHub and creates PRs at scale
+- **Parallel processing** – `asyncio.gather` + semaphore for concurrent repo analysis (v2.0)
 - **Multi-round** – Runs N rounds with configurable delay between rounds
 - **Cross-file fixes** – Detects the same pattern across multiple files and fixes all at once
 - **Duplicate prevention** – Title similarity matching prevents duplicate PRs
@@ -37,6 +38,12 @@ ContribAI discovers open source repositories, analyzes them for improvement oppo
 - **AI policy detection** – Skips repos that ban AI-generated contributions
 - **Smart validation** – Deep finding validation reduces false positives
 - **Rate limiting** – Max 2 findings per repo to avoid spamming
+
+### Resilience & Safety (v2.0.0)
+- **API retry with backoff** – Auto-retries on 502/503/504 errors (3 attempts, exponential backoff)
+- **Code-only modifications** – Skips `.md`, `.yaml`, `.json`, `.toml` and meta files (LICENSE, CONTRIBUTING.md)
+- **Fork cleanup** – `contribai cleanup` removes stale forks with no open PRs
+- **Parallel hunt** – Process up to 10 repos concurrently with configurable semaphore
 
 ### Multi-Model Agent (v0.7.0+)
 - **Task routing** – Routes analysis/generation/review to different models
@@ -113,7 +120,9 @@ discovery:
 ```bash
 contribai hunt                             # Hunt for repos and contribute
 contribai hunt --rounds 5 --delay 15       # 5 rounds, 15min delay
-contribai hunt --language python           # Filter by language
+contribai hunt --mode analysis             # Code analysis only (no issues)
+contribai hunt --mode issues               # Issue solving only
+contribai hunt --mode both                 # Both analysis + issues (default)
 ```
 
 ### Target a specific repo
@@ -153,12 +162,13 @@ contribai profile list                     # List profiles
 contribai profile security-focused         # Run with profile
 ```
 
-### Status & stats
+### Status, stats & cleanup
 
 ```bash
 contribai status        # Check submitted PRs
 contribai stats         # Overall statistics
 contribai info          # System info
+contribai cleanup       # Remove stale forks with no open PRs
 ```
 
 ## Plugin System
@@ -206,7 +216,7 @@ contribai/
 ## Testing
 
 ```bash
-pytest tests/ -v                  # Run all 287 tests
+pytest tests/ -v                  # Run all 213 tests
 pytest tests/ -v --cov=contribai  # With coverage
 ruff check contribai/             # Lint
 ruff format contribai/            # Format
@@ -214,7 +224,7 @@ ruff format contribai/            # Format
 
 ## Safety
 
-- **Daily PR limit** – Configurable max PRs per day (default: 10)
+- **Daily PR limit** – Configurable max PRs per day (default: 15)
 - **Quality scorer** – 7-check gate prevents low-quality PRs
 - **Deep validation** – LLM validates findings against full file context
 - **AI policy detection** – Skips repos that ban AI contributions
@@ -222,7 +232,9 @@ ruff format contribai/            # Format
 - **CI monitoring** – Auto-closes PRs that fail CI checks
 - **API quotas** – Track and limit GitHub + LLM usage daily
 - **Dry run mode** – Preview everything without creating PRs
-- **Rate limit awareness** – Exponential backoff with jitter
+- **5xx retry with backoff** – Auto-retries on GitHub 502/503/504 (3x, 2s/4s/8s)
+- **Code-only modifications** – Never modifies docs, configs, or meta files
+- **Fork cleanup** – Removes stale forks after PRs are merged/closed
 
 ## License
 

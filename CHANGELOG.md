@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-03-22
+
+### Added
+- **Parallel Hunt Mode**: `asyncio.gather` + semaphore for concurrent repo processing in hunt
+  - New `_hunt_process_repo()` method extracted as class method
+  - Honors `max_concurrent_repos` config (default: 3)
+- **GitHub API retry with backoff**: `_request()` retries 3× on 502/503/504 errors (2s/4s/8s)
+- **Fork cleanup command**: `contribai cleanup` — syncs PR statuses, removes stale forks via `gh repo delete`
+- **Code-only file filter**: `SKIP_EXTENSIONS` (.md, .yaml, .json, .toml, .rst, .txt, .cfg, .ini, .lock) and `PROTECTED_META_FILES` (LICENSE, CONTRIBUTING.md, etc.) prevent non-code modifications
+- **Hunt mode flags**: `--mode analysis|issues|both` for fine-grained control
+- **EXE standalone behavior**: Defaults to `info` command when run without arguments, pauses before exit
+
+### Changed
+- `max_repos_per_run` from config is now respected in hunt mode (was hardcoded to 3)
+- `star_tiers` in hunt mode now prioritizes configured `stars_range` first
+- Daily PR limit default changed from 10 to 15
+- Test count: 213 tests (refactored from 287)
+
+### Fixed
+- Hunt mode ignored `max_repos_per_run` config, used hardcoded `targets[:3]`
+- 504 Gateway Timeout crashes when pushing files to GitHub API
+- Unwanted PRs modifying non-code files (CONTRIBUTING.md, LICENSE, .yaml, .json)
+
+
 ## [1.0.0] - 2026-03-20
 
 ### Added
