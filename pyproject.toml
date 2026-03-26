@@ -50,6 +50,9 @@ dev = [
 local-llm = [
     "ollama>=0.4,<1.0",
 ]
+mcp = [
+    "mcp>=1.0,<2.0",
+]
 
 [project.scripts]
 contribai = "contribai.cli.main:cli"

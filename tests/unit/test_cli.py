@@ -46,15 +46,17 @@ class TestCLIHelp:
 
 
 class TestCLIConfig:
-    def test_show_config_without_file(self, runner):
+    def test_show_config_without_file(self, runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
         result = runner.invoke(cli, ["config"])
         assert result.exit_code == 0
         assert "gemini" in result.output.lower()
 
 
 class TestCLINoToken:
-    def test_run_without_token_fails(self, runner, monkeypatch):
+    def test_run_without_token_fails(self, runner, monkeypatch, tmp_path):
         """Run without any token source should fail gracefully."""
+        monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.setattr(
             "subprocess.run",

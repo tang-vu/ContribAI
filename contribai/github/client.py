@@ -171,12 +171,31 @@ class GitHubClient:
             for item in data.get("tree", [])
         ]
 
-    async def get_file_content(self, owner: str, repo: str, path: str) -> str:
+    async def get_file_content(
+        self, owner: str, repo: str, path: str, ref: str | None = None
+    ) -> str:
         """Get the content of a file from the repository."""
-        data = await self._get(f"/repos/{owner}/{repo}/contents/{path}")
+        params = {"ref": ref} if ref else None
+        data = await self._get(f"/repos/{owner}/{repo}/contents/{path}", params=params)
         if data.get("encoding") == "base64":
             return base64.b64decode(data["content"]).decode("utf-8")
         return data.get("content", "")
+
+    async def get_file_content_with_sha(
+        self, owner: str, repo: str, path: str, ref: str | None = None
+    ) -> tuple[str, str]:
+        """Get file content and blob SHA (needed for subsequent updates).
+
+        Returns:
+            (content, sha) where sha is the blob SHA required by push_file_change.
+        """
+        params = {"ref": ref} if ref else None
+        data = await self._get(f"/repos/{owner}/{repo}/contents/{path}", params=params)
+        if data.get("encoding") == "base64":
+            content = base64.b64decode(data["content"]).decode("utf-8")
+        else:
+            content = data.get("content", "")
+        return content, data.get("sha", "")
 
     async def get_open_issues(
         self, owner: str, repo: str, per_page: int = 30, labels: str | None = None
@@ -532,6 +551,14 @@ class GitHubClient:
             json={"state": "closed"},
         )
         logger.info("Closed PR #%d on %s/%s", pr_number, owner, repo)
+
+    async def list_user_forks(self) -> list[dict]:
+        """List all forks owned by the authenticated user."""
+        return await self._get("/user/repos", params={"type": "fork", "per_page": "100"})
+
+    async def delete_repository(self, owner: str, repo: str) -> None:
+        """Delete a repository (must be owner or have admin access)."""
+        await self._delete(f"/repos/{owner}/{repo}")
 
     @staticmethod
     def _parse_repo(data: dict) -> Repository:

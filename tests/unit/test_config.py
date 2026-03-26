@@ -40,7 +40,8 @@ class TestLoadConfig:
         assert config.github.token == "ghp_test123"
         assert config.llm.provider == "gemini"
 
-    def test_load_defaults_when_no_file(self):
+    def test_load_defaults_when_no_file(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
         config = load_config("/nonexistent/path/config.yaml")
         assert config.llm.provider == "gemini"
 
