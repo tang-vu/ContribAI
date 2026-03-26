@@ -304,19 +304,61 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 # ── Tool implementations (stubs — filled in subsequent tasks) ──────────────────
 
 async def _search_repos(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    language = args["language"]
+    stars_min = args.get("stars_min", 50)
+    stars_max = args.get("stars_max", 10000)
+    limit = args.get("limit", 10)
+    query = f"language:{language} stars:{stars_min}..{stars_max}"
+    repos = await gh.search_repositories(query, per_page=limit)
+    return _ok(repos=[
+        {
+            "full_name": r.full_name,
+            "stars": r.stars,
+            "language": r.language,
+            "description": r.description,
+        }
+        for r in repos
+    ])
+
 
 async def _get_repo_info(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    repo = await gh.get_repo_details(args["owner"], args["repo"])
+    return _ok(
+        full_name=repo.full_name,
+        stars=repo.stars,
+        language=repo.language,
+        open_issues=repo.open_issues,
+        default_branch=repo.default_branch,
+        description=repo.description,
+    )
+
 
 async def _get_file_tree(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    owner, repo = args["owner"], args["repo"]
+    max_files = args.get("max_files", 200)
+    nodes = await gh.get_file_tree(owner, repo)
+    blobs = [n.path for n in nodes if n.type == "blob"]
+    return _ok(files=blobs[:max_files], total=len(blobs))
+
 
 async def _get_file_content(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    content = await gh.get_file_content(
+        args["owner"], args["repo"], args["path"], ref=args.get("ref")
+    )
+    return _ok(content=content)
+
 
 async def _get_open_issues(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    issues = await gh.get_open_issues(args["owner"], args["repo"], per_page=args.get("limit", 20))
+    return _ok(issues=[
+        {"number": i.number, "title": i.title, "body": i.body, "labels": i.labels}
+        for i in issues
+    ])
 
 async def _fork_repo(args: dict) -> list[types.TextContent]:
     return _err("not implemented")
