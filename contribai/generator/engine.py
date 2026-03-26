@@ -64,6 +64,11 @@ class ContributionGenerator:
                 logger.warning("No valid changes parsed for finding: %s", finding.title)
                 return None
 
+            # 3b: Validate generated code (syntax sanity check)
+            if not self._validate_changes(changes):
+                logger.warning("Code validation failed for: %s", finding.title)
+                return None
+
             # 4: Generate commit message
             commit_msg = await self._generate_commit_message(finding, changes, context)
 
@@ -142,6 +147,11 @@ class ContributionGenerator:
             "6. Do NOT refactor adjacent code — fix only the reported issue\n"
             "7. Do NOT add comments explaining what the code does (self-documenting)\n"
             "8. Do NOT modify files unrelated to the finding\n\n"
+            "OUTPUT FORMAT RULES (CRITICAL):\n"
+            "- Return ONLY raw JSON — no markdown fences, no ```json blocks\n"
+            "- No explanatory text before or after the JSON\n"
+            "- The response must be valid, parseable JSON and nothing else\n"
+            "- Do NOT wrap your response in code blocks of any kind\n\n"
             "MAINTAINER ACCEPTANCE CRITERIA:\n"
             "- Would a busy maintainer merge this in under 30 seconds?\n"
             "- Is the change obviously correct with no side effects?\n"
@@ -288,6 +298,62 @@ class ContributionGenerator:
             )
 
         return prompt
+
+    def _validate_changes(self, changes: list) -> bool:
+        """Validate generated code changes for basic syntax sanity.
+
+        Quick checks before expensive self-review:
+        - Non-empty edits/content
+        - No-op detection (search == replace)
+        - Balanced brackets for common languages
+
+        Returns True if changes pass validation.
+        """
+        if not changes:
+            return False
+
+        for change in changes:
+            # Check new file content is non-trivial
+            if change.get("is_new_file") and change.get("content"):
+                content = change["content"].strip()
+                if len(content) < 10:
+                    logger.debug(
+                        "Validation: new file content too short (%d chars)",
+                        len(content),
+                    )
+                    return False
+
+            # Check edits have substance
+            edits = change.get("edits", [])
+            for edit in edits:
+                search = edit.get("search", "")
+                replace = edit.get("replace", "")
+                if not search and not replace:
+                    logger.debug("Validation: empty search/replace pair")
+                    return False
+                if search == replace:
+                    logger.debug("Validation: replace identical to search (no-op)")
+                    return False
+
+            # Balanced bracket check on generated code
+            code_text = change.get("content", "") or "".join(e.get("replace", "") for e in edits)
+            if code_text:
+                pairs = {"(": ")", "[": "]", "{": "}"}
+                stack = []
+                for ch in code_text:
+                    if ch in pairs:
+                        stack.append(pairs[ch])
+                    elif ch in pairs.values():
+                        if not stack or stack[-1] != ch:
+                            logger.debug("Validation: unbalanced brackets in generated code")
+                            return False
+                        stack.pop()
+                # Only fail if severely unbalanced (>5 unclosed)
+                if len(stack) > 5:
+                    logger.debug("Validation: %d unclosed brackets", len(stack))
+                    return False
+
+        return True
 
     def _find_cross_file_instances(self, finding: Finding, context: RepoContext) -> dict[str, str]:
         """Find other files in the repo with the same issue pattern.

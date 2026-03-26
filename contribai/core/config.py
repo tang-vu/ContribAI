@@ -164,6 +164,9 @@ class PipelineConfig(BaseModel):
 
     max_concurrent_repos: int = 3
     timeout_per_repo_sec: int = 300
+    inter_repo_delay_sec: float = 5.0  # delay between repos to avoid rate limits
+    max_retries: int = 2  # middleware retry count
+    min_quality_score: float = 5.0  # quality gate threshold
 
 
 class QuotaConfig(BaseModel):

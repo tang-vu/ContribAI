@@ -154,12 +154,8 @@ class ContribPipeline:
         # Middleware chain (DeerFlow pattern)
         self._middleware_chain = build_default_chain(
             max_prs_per_day=self.config.github.max_prs_per_day,
-            max_retries=self.config.pipeline.max_retries
-            if hasattr(self.config.pipeline, "max_retries")
-            else 2,
-            min_quality_score=self.config.pipeline.min_quality_score
-            if hasattr(self.config.pipeline, "min_quality_score")
-            else 5.0,
+            max_retries=self.config.pipeline.max_retries,
+            min_quality_score=self.config.pipeline.min_quality_score,
         )
         logger.info("Middleware chain: %d middlewares loaded", len(self._middleware_chain))
 
@@ -401,14 +397,14 @@ class ContribPipeline:
                     max_conc,
                 )
 
-                repo_results = await asyncio.gather(
-                    *[
-                        self._hunt_process_repo(repo, mode, dry_run, remaining, sem)
-                        for repo in selected
-                    ]
-                )
-
-                for rr in repo_results:
+                # Process repos sequentially with inter-repo delay
+                # to avoid RESOURCE_EXHAUSTED rate limits
+                delay_between = self.config.pipeline.inter_repo_delay_sec
+                for i, repo in enumerate(selected):
+                    if remaining <= 0 and not dry_run:
+                        logger.warning("PR limit reached mid-round")
+                        break
+                    rr = await self._hunt_process_repo(repo, mode, dry_run, remaining, sem)
                     total.repos_analyzed += rr.repos_analyzed
                     total.findings_total += rr.findings_total
                     total.contributions_generated += rr.contributions_generated
@@ -416,6 +412,11 @@ class ContribPipeline:
                     total.prs.extend(rr.prs)
                     total.errors.extend(rr.errors)
                     remaining -= rr.prs_created
+
+                    # Inter-repo delay (skip after last repo)
+                    if i < len(selected) - 1 and delay_between > 0:
+                        logger.debug("⏳ Inter-repo delay: %.1fs", delay_between)
+                        await asyncio.sleep(delay_between)
 
                 if rnd < rounds:
                     logger.info(
