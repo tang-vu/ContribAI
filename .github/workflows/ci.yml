@@ -55,4 +55,4 @@ jobs:
       - name: Install deps
         run: pip install -e ".[dev]" pip-audit
       - name: Audit dependencies
-        run: pip-audit
+        run: pip-audit --ignore-vuln CVE-2026-4539  # pygments transitive dep, no fix available yet
