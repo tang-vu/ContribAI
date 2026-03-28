@@ -1,0 +1,81 @@
+[package]
+name = "contribai"
+version = "5.0.0"
+edition = "2021"
+authors = ["tang-vu <tang.vu@contribai.dev>"]
+description = "AI agent that autonomously contributes to open source projects on GitHub"
+homepage = "https://github.com/tang-vu/ContribAI"
+repository = "https://github.com/tang-vu/ContribAI"
+license = "MIT"
+keywords = ["ai", "github", "open-source", "agent", "contribution"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "contribai"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "gzip"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# AST Analysis
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+url = "2"
+base64 = "0.22"
+dirs = "6"
+glob = "0.3"
+futures = "0.3"
+async-trait = "0.1"
+
+# Console output
+colored = "2"
+indicatif = "0.17"
+
+[dev-dependencies]
+mockall = "0.13"
+tempfile = "3"
+wiremock = "0.6"
+tokio-test = "0.4"
+assert_matches = "1.5"
+
+[profile.release]
+opt-level = "z"      # Size optimization
+lto = true           # Link-time optimization
+codegen-units = 1    # Single codegen unit for better optimization
+strip = true         # Strip debug symbols
+panic = "abort"      # Smaller binary
