@@ -28,7 +28,7 @@ These are notable merged PRs on well-known open source projects:
 |----|-------------|
 | [#206](https://github.com/KnugiHK/WhatsApp-Chat-Exporter/pull/206) | Quality: Missing error handling improvements |
 
-### [koala73/worldmonitor](https://github.com/koala73/worldmonitor) — Real-time monitoring
+### [koala73/worldmonitor](https://github.com/koala73/worldmonitor) — Real-time monitoring (45k+ ⭐)
 
 | PR | Description |
 |----|-------------|
@@ -64,7 +64,7 @@ ContribAI has submitted pull requests to the following 21 repositories:
 | [KnugiHK/WhatsApp-Chat-Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter) | 500+ | ✅ Merged |
 | [Fannovel16/ComfyUI-Frame-Interpolation](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation) | 500+ | Submitted |
 | [J2TEAM/vibe.j2team.org](https://github.com/J2TEAM/vibe.j2team.org) | — | Submitted |
-| [koala73/worldmonitor](https://github.com/koala73/worldmonitor) | — | ✅ 3 Merged |
+| [koala73/worldmonitor](https://github.com/koala73/worldmonitor) | 45k+ | ✅ 3 Merged |
 | [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) | — | Submitted |
 | [anomalyco/opencode](https://github.com/anomalyco/opencode) | — | Submitted |
 | [radixark/miles](https://github.com/radixark/miles) | — | Submitted |

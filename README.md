@@ -14,7 +14,7 @@
 | **PRs Submitted** | 34+ |
 | **PRs Merged** | 9 |
 | **Repos Contributed** | 21 |
-| **Notable Repos** | Flask, Pandas, Maigret, Marimo, s-tui |
+| **Notable Repos** | Maigret (10k⭐), Worldmonitor (45k⭐), s-tui (4k⭐) |
 
 > Set it up once, wake up to merged PRs. See the [**Hall of Fame →**](HALL_OF_FAME.md)
 
