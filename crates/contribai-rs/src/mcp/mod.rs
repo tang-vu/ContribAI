@@ -1,6 +1,7 @@
-//! MCP server for Claude/Antigravity integration.
+//! MCP server and client for Model Context Protocol integration.
 //!
-//! Port from Python `mcp_server.py`.
-//! Exposes ContribAI's GitHub tools via Model Context Protocol (stdio).
+//! - `server`: Exposes ContribAI's GitHub tools via stdio (for Claude/Antigravity).
+//! - `client`: Consumes external MCP servers via stdio subprocess.
 
+pub mod client;
 pub mod server;

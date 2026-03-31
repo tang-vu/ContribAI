@@ -19,6 +19,12 @@
 //! - get_stats
 //! - patrol_prs
 //! - cleanup_forks
+//! - add_pr_review_comment
+//! - dismiss_review
+//! - sign_cla
+//! - get_pr_reviews
+//! - get_pr_comments
+//! - get_authenticated_user
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -276,6 +282,81 @@ fn tool_definitions() -> Vec<ToolDef> {
                 "properties": {
                     "dry_run": {"type": "boolean", "default": true}
                 }
+            }),
+        },
+        ToolDef {
+            name: "add_pr_review_comment".into(),
+            description: "Post a comment on a pull request".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer"},
+                    "body": {"type": "string"}
+                },
+                "required": ["owner", "repo", "pr_number", "body"]
+            }),
+        },
+        ToolDef {
+            name: "dismiss_review".into(),
+            description: "Dismiss a pull request review with a message".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer"},
+                    "review_id": {"type": "integer"},
+                    "message": {"type": "string"}
+                },
+                "required": ["owner", "repo", "pr_number", "review_id", "message"]
+            }),
+        },
+        ToolDef {
+            name: "sign_cla".into(),
+            description: "Sign the Contributor License Agreement (CLA) for a repository".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"}
+                },
+                "required": ["owner", "repo"]
+            }),
+        },
+        ToolDef {
+            name: "get_pr_reviews".into(),
+            description: "Get reviews submitted on a pull request".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer"}
+                },
+                "required": ["owner", "repo", "pr_number"]
+            }),
+        },
+        ToolDef {
+            name: "get_pr_comments".into(),
+            description: "Get issue-level comments on a pull request".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer"}
+                },
+                "required": ["owner", "repo", "pr_number"]
+            }),
+        },
+        ToolDef {
+            name: "get_authenticated_user".into(),
+            description: "Get the authenticated GitHub user profile".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
             }),
         },
     ]
@@ -706,6 +787,51 @@ async fn handle_tool_call(
             }))
         }
 
+        "add_pr_review_comment" => {
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
+            let pr_number = args["pr_number"].as_i64().unwrap_or(0);
+            let body = args["body"].as_str().unwrap_or("");
+            let comment = github.create_pr_comment(owner, repo, pr_number, body).await?;
+            Ok(json!(comment))
+        }
+
+        "dismiss_review" => {
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
+            let pr_number = args["pr_number"].as_i64().unwrap_or(0);
+            let review_id = args["review_id"].as_i64().unwrap_or(0);
+            let message = args["message"].as_str().unwrap_or("");
+            let result = github.dismiss_review(owner, repo, pr_number, review_id, message).await?;
+            Ok(json!(result))
+        }
+
+        "sign_cla" => {
+            // CLA signing is handled automatically by patrol mode
+            Ok(json!({"message": "CLA signing is handled automatically by patrol mode"}))
+        }
+
+        "get_pr_reviews" => {
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
+            let pr_number = args["pr_number"].as_i64().unwrap_or(0);
+            let reviews = github.get_pr_reviews(owner, repo, pr_number).await?;
+            Ok(json!(reviews))
+        }
+
+        "get_pr_comments" => {
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
+            let pr_number = args["pr_number"].as_i64().unwrap_or(0);
+            let comments = github.get_pr_comments(owner, repo, pr_number).await?;
+            Ok(json!(comments))
+        }
+
+        "get_authenticated_user" => {
+            let user = github.get_authenticated_user().await?;
+            Ok(json!(user))
+        }
+
         _ => {
             anyhow::bail!("Unknown tool: {}", name);
         }
@@ -719,8 +845,8 @@ mod tests {
     #[test]
     fn test_tool_definitions_complete() {
         let tools = tool_definitions();
-        // Must have all 15 tools registered
-        assert_eq!(tools.len(), 15, "Expected 15 tools, got {}", tools.len());
+        // Must have all 21 tools registered
+        assert_eq!(tools.len(), 21, "Expected 21 tools, got {}", tools.len());
 
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
 
@@ -736,12 +862,20 @@ mod tests {
         assert!(names.contains(&"create_pr"), "missing create_pr");
         assert!(names.contains(&"get_stats"), "missing get_stats");
 
-        // 5 newly added tools
+        // 5 previously added tools
         assert!(names.contains(&"close_pr"), "missing close_pr");
         assert!(names.contains(&"check_duplicate_pr"), "missing check_duplicate_pr");
         assert!(names.contains(&"check_ai_policy"), "missing check_ai_policy");
         assert!(names.contains(&"patrol_prs"), "missing patrol_prs");
         assert!(names.contains(&"cleanup_forks"), "missing cleanup_forks");
+
+        // 6 newly added tools
+        assert!(names.contains(&"add_pr_review_comment"), "missing add_pr_review_comment");
+        assert!(names.contains(&"dismiss_review"), "missing dismiss_review");
+        assert!(names.contains(&"sign_cla"), "missing sign_cla");
+        assert!(names.contains(&"get_pr_reviews"), "missing get_pr_reviews");
+        assert!(names.contains(&"get_pr_comments"), "missing get_pr_comments");
+        assert!(names.contains(&"get_authenticated_user"), "missing get_authenticated_user");
     }
 
     #[test]

@@ -132,6 +132,42 @@ pub fn builtin_skills() -> Vec<AnalysisSkill> {
             frameworks: vec!["fastapi".into()],
             priority: 4,
         },
+        AnalysisSkill {
+            name: "express_security".into(),
+            description: "Express.js: middleware order, CORS, helmet, input sanitization".into(),
+            languages: vec!["javascript".into(), "typescript".into()],
+            frameworks: vec!["express".into()],
+            priority: 4,
+        },
+        // Additional universal skills
+        AnalysisSkill {
+            name: "docs".into(),
+            description: "Missing or outdated docstrings, README gaps, incorrect examples".into(),
+            languages: vec![],
+            frameworks: vec![],
+            priority: 5,
+        },
+        AnalysisSkill {
+            name: "ui_ux".into(),
+            description: "Accessibility (a11y), responsive design, color contrast, ARIA labels".into(),
+            languages: vec![],
+            frameworks: vec![],
+            priority: 5,
+        },
+        AnalysisSkill {
+            name: "performance".into(),
+            description: "N+1 queries, unnecessary allocations, blocking I/O, cache misses".into(),
+            languages: vec![],
+            frameworks: vec![],
+            priority: 5,
+        },
+        AnalysisSkill {
+            name: "refactor".into(),
+            description: "Unused imports, dead code, overly complex functions, duplicated logic".into(),
+            languages: vec![],
+            frameworks: vec![],
+            priority: 5,
+        },
     ]
 }
 

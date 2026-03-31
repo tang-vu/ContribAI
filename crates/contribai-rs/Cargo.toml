@@ -68,6 +68,11 @@ axum = { version = "0.7", features = ["json", "query"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
+# HMAC-SHA256 for webhook signature verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 # Console output
 colored = "2"
 indicatif = "0.17"

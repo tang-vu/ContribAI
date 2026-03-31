@@ -700,6 +700,77 @@ impl GitHubClient {
         .await
     }
 
+    /// Dismiss a pull request review.
+    ///
+    /// PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+    pub async fn dismiss_review(
+        &self,
+        owner: &str,
+        repo: &str,
+        pull_number: i64,
+        review_id: i64,
+        message: &str,
+    ) -> Result<Value> {
+        self.put(
+            &format!(
+                "/repos/{}/{}/pulls/{}/reviews/{}/dismissals",
+                owner, repo, pull_number, review_id
+            ),
+            &serde_json::json!({
+                "message": message,
+                "event": "DISMISS"
+            }),
+        )
+        .await
+    }
+
+    /// Check if CLA has been signed by looking at commit statuses.
+    ///
+    /// Fetches the PR head SHA, then queries the combined commit status.
+    /// Returns true if a CLA-related status context reports "success".
+    pub async fn check_cla_signed(
+        &self,
+        owner: &str,
+        repo: &str,
+        pull_number: i64,
+    ) -> Result<bool> {
+        // Get head SHA from PR details
+        let pr = self.get_pr_details(owner, repo, pull_number).await?;
+        let sha = pr["head"]["sha"]
+            .as_str()
+            .ok_or_else(|| ContribError::GitHub("PR head SHA not found".into()))?
+            .to_string();
+
+        // Fetch combined commit status
+        let status = self
+            .get(&format!("/repos/{}/{}/commits/{}/status", owner, repo, sha))
+            .await?;
+
+        let statuses = status["statuses"].as_array().cloned().unwrap_or_default();
+
+        // Look for CLA-related contexts (case-insensitive)
+        let cla_success = statuses.iter().any(|s| {
+            let context = s["context"].as_str().unwrap_or("").to_lowercase();
+            let state = s["state"].as_str().unwrap_or("");
+            (context.contains("cla") || context.contains("license/cla")) && state == "success"
+        });
+
+        Ok(cla_success)
+    }
+
+    /// Get branch details.
+    ///
+    /// GET /repos/{owner}/{repo}/branches/{branch}
+    pub async fn get_branch_info(
+        &self,
+        owner: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<Value> {
+        self.get(&format!("/repos/{}/{}/branches/{}", owner, repo, branch))
+            .await
+    }
+
     /// Get the diff of a pull request.
     pub async fn get_pr_diff(
         &self,

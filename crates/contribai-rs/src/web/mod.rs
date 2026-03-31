@@ -5,22 +5,27 @@
 //!   - HTML dashboard (GET /)
 //!   - Health endpoint (GET /api/health)
 //!   - Stats, repos, PRs, runs (GET /api/*)
-//!   - Trigger run / target (POST /api/run*)
+//!   - Trigger run / target (POST /api/run*)  — API-key protected
+//!   - GitHub webhook receiver (POST /api/webhooks/github)
 //!
-//! v5.3 (Sprint 3): Full axum implementation replacing stub.
+//! v5.4 (Sprint 4): API key authentication + GitHub webhook receiver.
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json},
     routing::{get, post},
     Router,
 };
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::Sha256;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
+use crate::core::config::ContribAIConfig;
 use crate::orchestrator::memory::Memory;
 
 // ── Shared state ─────────────────────────────────────────────────────────────
@@ -29,6 +34,87 @@ use crate::orchestrator::memory::Memory;
 pub struct AppState {
     pub memory: Arc<Memory>,
     pub version: &'static str,
+    /// Accepted API keys. Empty = no authentication required.
+    pub api_keys: Vec<String>,
+    /// HMAC-SHA256 shared secret for GitHub webhook verification.
+    pub webhook_secret: Option<String>,
+}
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+/// Query parameter for API key fallback (e.g. `?api_key=...`).
+#[derive(Deserialize)]
+struct ApiKeyQuery {
+    api_key: Option<String>,
+}
+
+/// Constant-time byte-slice equality to mitigate timing attacks.
+///
+/// Returns `true` only when both slices have identical length and content.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    // XOR every byte pair; if any differ the accumulator is non-zero.
+    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Verify API key from `X-API-Key` header or `?api_key=` query param.
+///
+/// If no keys are configured the call is allowed through unconditionally.
+/// Returns `Ok(())` on success, `Err(StatusCode)` otherwise.
+fn verify_api_key(
+    headers: &HeaderMap,
+    query_key: Option<&str>,
+    api_keys: &[String],
+) -> Result<(), StatusCode> {
+    // No keys configured → open access
+    if api_keys.is_empty() {
+        return Ok(());
+    }
+
+    // X-API-Key header takes precedence over query parameter
+    let provided = headers
+        .get("X-API-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .or_else(|| query_key.map(String::from));
+
+    match provided {
+        Some(key) => {
+            if api_keys
+                .iter()
+                .any(|valid| constant_time_eq(key.as_bytes(), valid.as_bytes()))
+            {
+                Ok(())
+            } else {
+                Err(StatusCode::FORBIDDEN)
+            }
+        }
+        None => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+// ── Webhook signature verification ───────────────────────────────────────────
+
+/// Verify GitHub HMAC-SHA256 webhook signature.
+///
+/// `signature` must be in the `sha256=<hex>` format sent by GitHub.
+fn verify_webhook_signature(payload: &[u8], signature: &str, secret: &str) -> bool {
+    if !signature.starts_with("sha256=") {
+        return false;
+    }
+    let expected_hex = &signature[7..];
+
+    let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    mac.update(payload);
+    let result = mac.finalize().into_bytes();
+    let computed_hex = hex::encode(result);
+
+    constant_time_eq(computed_hex.as_bytes(), expected_hex.as_bytes())
 }
 
 // ── Query params ─────────────────────────────────────────────────────────────
@@ -100,18 +186,30 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     let prs = state.memory.get_prs(None, 10000).unwrap_or_default();
     let total_prs = prs.len();
-    let merged = prs.iter().filter(|p| {
-        p.get("status").map(|s| s == "merged").unwrap_or(false)
-    }).count();
-    let open = prs.iter().filter(|p| {
-        p.get("status").map(|s| s == "open" || s == "ci_passed").unwrap_or(false)
-    }).count();
-    let ci_passed = prs.iter().filter(|p| {
-        p.get("status").map(|s| s == "ci_passed").unwrap_or(false)
-    }).count();
+    let merged = prs
+        .iter()
+        .filter(|p| p.get("status").map(|s| s == "merged").unwrap_or(false))
+        .count();
+    let open = prs
+        .iter()
+        .filter(|p| {
+            p.get("status")
+                .map(|s| s == "open" || s == "ci_passed")
+                .unwrap_or(false)
+        })
+        .count();
+    let ci_passed = prs
+        .iter()
+        .filter(|p| {
+            p.get("status")
+                .map(|s| s == "ci_passed")
+                .unwrap_or(false)
+        })
+        .count();
 
     // Unique repos
-    let repos: std::collections::HashSet<&str> = prs.iter()
+    let repos: std::collections::HashSet<&str> = prs
+        .iter()
         .filter_map(|p| p.get("repo").map(|s| s.as_str()))
         .collect();
 
@@ -129,8 +227,12 @@ pub async fn get_repos(
     State(state): State<AppState>,
     Query(params): Query<PaginationParams>,
 ) -> impl IntoResponse {
-    let prs = state.memory.get_prs(None, params.limit * 3).unwrap_or_default();
-    let mut repo_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let prs = state
+        .memory
+        .get_prs(None, params.limit * 3)
+        .unwrap_or_default();
+    let mut repo_map: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for pr in &prs {
         if let Some(repo) = pr.get("repo") {
             *repo_map.entry(repo.clone()).or_insert(0) += 1;
@@ -140,9 +242,7 @@ pub async fn get_repos(
         .into_iter()
         .map(|(repo, count)| serde_json::json!({ "repo": repo, "pr_count": count }))
         .collect();
-    repos.sort_by(|a, b| {
-        b["pr_count"].as_u64().cmp(&a["pr_count"].as_u64())
-    });
+    repos.sort_by(|a, b| b["pr_count"].as_u64().cmp(&a["pr_count"].as_u64()));
     repos.truncate(params.limit);
     Json(repos)
 }
@@ -152,14 +252,20 @@ pub async fn get_prs(
     State(state): State<AppState>,
     Query(params): Query<PrFilterParams>,
 ) -> impl IntoResponse {
-    let prs = state.memory
+    let prs = state
+        .memory
         .get_prs(params.status.as_deref(), params.limit)
         .unwrap_or_default();
     // Convert HashMap<String,String> → serde_json::Value for JSON response
-    let json_prs: Vec<serde_json::Value> = prs.into_iter()
-        .map(|m| serde_json::Value::Object(
-            m.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect()
-        ))
+    let json_prs: Vec<serde_json::Value> = prs
+        .into_iter()
+        .map(|m| {
+            serde_json::Value::Object(
+                m.into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::String(v)))
+                    .collect(),
+            )
+        })
         .collect();
     Json(json_prs)
 }
@@ -170,42 +276,101 @@ pub async fn get_runs(
     Query(params): Query<PaginationParams>,
 ) -> impl IntoResponse {
     let prs = state.memory.get_prs(None, params.limit).unwrap_or_default();
-    let runs: Vec<serde_json::Value> = prs.iter().map(|pr| {
-        serde_json::json!({
-            "repo": pr.get("repo").map(|s| s.as_str()).unwrap_or(""),
-            "pr_number": pr.get("pr_number").map(|s| s.as_str()).unwrap_or(""),
-            "type": pr.get("contribution_type").map(|s| s.as_str()).unwrap_or(""),
-            "status": pr.get("status").map(|s| s.as_str()).unwrap_or(""),
-            "created_at": pr.get("created_at").map(|s| s.as_str()).unwrap_or(""),
+    let runs: Vec<serde_json::Value> = prs
+        .iter()
+        .map(|pr| {
+            serde_json::json!({
+                "repo": pr.get("repo").map(|s| s.as_str()).unwrap_or(""),
+                "pr_number": pr.get("pr_number").map(|s| s.as_str()).unwrap_or(""),
+                "type": pr.get("contribution_type").map(|s| s.as_str()).unwrap_or(""),
+                "status": pr.get("status").map(|s| s.as_str()).unwrap_or(""),
+                "created_at": pr.get("created_at").map(|s| s.as_str()).unwrap_or(""),
+            })
         })
-    }).collect();
+        .collect();
     Json(runs)
 }
 
-/// POST /api/run — trigger a background run
-pub async fn trigger_run() -> impl IntoResponse {
-    // Note: actual pipeline execution requires config + env — this signals intent
-    // In production: send to a tokio channel consumed by the scheduler
-    info!("🚀 Manual run triggered via API");
-    (
+/// POST /api/run — trigger a background run (requires API key if configured)
+pub async fn trigger_run(
+    headers: HeaderMap,
+    Query(query): Query<ApiKeyQuery>,
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<TriggerResponse>), StatusCode> {
+    verify_api_key(&headers, query.api_key.as_deref(), &state.api_keys)?;
+
+    // Note: actual pipeline execution requires config + env — this signals intent.
+    // In production: send to a tokio channel consumed by the scheduler.
+    info!("Manual run triggered via API");
+    Ok((
         StatusCode::ACCEPTED,
         Json(TriggerResponse {
             status: "accepted",
             message: "Pipeline run queued. Check /api/runs for progress.".into(),
         }),
-    )
+    ))
 }
 
-/// POST /api/run/target — trigger run on specific repo
-pub async fn trigger_target() -> impl IntoResponse {
-    info!("🎯 Targeted run triggered via API");
-    (
+/// POST /api/run/target — trigger run on specific repo (requires API key if configured)
+pub async fn trigger_target(
+    headers: HeaderMap,
+    Query(query): Query<ApiKeyQuery>,
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<TriggerResponse>), StatusCode> {
+    verify_api_key(&headers, query.api_key.as_deref(), &state.api_keys)?;
+
+    info!("Targeted run triggered via API");
+    Ok((
         StatusCode::ACCEPTED,
         Json(TriggerResponse {
             status: "accepted",
             message: "Targeted run queued.".into(),
         }),
-    )
+    ))
+}
+
+/// POST /api/webhooks/github — receive and verify GitHub webhook events
+pub async fn github_webhook(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> Result<Json<Value>, StatusCode> {
+    // Verify HMAC-SHA256 signature when a webhook secret is configured
+    if let Some(secret) = &state.webhook_secret {
+        let signature = headers
+            .get("X-Hub-Signature-256")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        if !verify_webhook_signature(&body, signature, secret) {
+            tracing::warn!("GitHub webhook signature verification failed");
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    // Parse event type from header (e.g. "push", "pull_request", "ping")
+    let event = headers
+        .get("X-GitHub-Event")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    // Parse JSON body; reject malformed payloads
+    let payload: Value =
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let action = payload
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    info!(event = %event, action = %action, "GitHub webhook received");
+
+    // Return accepted; pipeline triggering can be wired to the scheduler later
+    Ok(Json(serde_json::json!({
+        "status": "accepted",
+        "event": event,
+        "action": action,
+    })))
 }
 
 // ── Server builder ───────────────────────────────────────────────────────────
@@ -218,12 +383,15 @@ pub fn build_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        // Public routes
         .route("/", get(dashboard))
         .route("/api/health", get(health))
         .route("/api/stats", get(get_stats))
         .route("/api/repos", get(get_repos))
         .route("/api/prs", get(get_prs))
         .route("/api/runs", get(get_runs))
+        .route("/api/webhooks/github", post(github_webhook))
+        // Protected routes — auth checked inside each handler
         .route("/api/run", post(trigger_run))
         .route("/api/run/target", post(trigger_target))
         .layer(cors)
@@ -231,32 +399,37 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 /// Start the web server.
+///
+/// `config` is consumed to extract `api_keys` and `webhook_secret` for `AppState`.
 pub async fn run_server(
     memory: Memory,
+    config: &ContribAIConfig,
     host: &str,
     port: u16,
 ) -> crate::core::error::Result<()> {
     let state = AppState {
         memory: Arc::new(memory),
         version: "5.1.0",
+        api_keys: config.web.api_keys.clone(),
+        webhook_secret: config.web.webhook_secret.clone(),
     };
 
     let router = build_router(state);
     let addr = format!("{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .map_err(|e| crate::core::error::ContribError::Config(
-            format!("Cannot bind to {}: {}", addr, e)
-        ))?;
+        .map_err(|e| {
+            crate::core::error::ContribError::Config(format!("Cannot bind to {}: {}", addr, e))
+        })?;
 
-    info!(address = %addr, "🌐 Web dashboard running");
-    println!("  🌐 Dashboard: http://{}", addr);
+    info!(address = %addr, "Web dashboard running");
+    println!("  Dashboard: http://{}", addr);
 
     axum::serve(listener, router)
         .await
-        .map_err(|e| crate::core::error::ContribError::Config(
-            format!("Server error: {}", e)
-        ))?;
+        .map_err(|e| {
+            crate::core::error::ContribError::Config(format!("Server error: {}", e))
+        })?;
 
     Ok(())
 }
@@ -316,23 +489,23 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>🤖 ContribAI</h1>
+  <h1>ContribAI</h1>
   <span><span id="status-dot"></span>Live</span>
   <span id="version-badge">v5.1.0</span>
 </header>
 
 <div class="container">
   <div class="stats-grid">
-    <div class="stat-card"><div class="num" id="stat-total">—</div><div class="label">Total PRs</div></div>
-    <div class="stat-card"><div class="num" id="stat-merged">—</div><div class="label">Merged</div></div>
-    <div class="stat-card"><div class="num" id="stat-open">—</div><div class="label">Open</div></div>
-    <div class="stat-card"><div class="num" id="stat-ci">—</div><div class="label">CI Passed</div></div>
-    <div class="stat-card"><div class="num" id="stat-repos">—</div><div class="label">Repos Targeted</div></div>
+    <div class="stat-card"><div class="num" id="stat-total">-</div><div class="label">Total PRs</div></div>
+    <div class="stat-card"><div class="num" id="stat-merged">-</div><div class="label">Merged</div></div>
+    <div class="stat-card"><div class="num" id="stat-open">-</div><div class="label">Open</div></div>
+    <div class="stat-card"><div class="num" id="stat-ci">-</div><div class="label">CI Passed</div></div>
+    <div class="stat-card"><div class="num" id="stat-repos">-</div><div class="label">Repos Targeted</div></div>
   </div>
 
   <div class="actions">
-    <button class="btn" onclick="triggerRun(false)">▶ Run Now</button>
-    <button class="btn" style="background:#30363d" onclick="triggerRun(true)">👁 Dry Run</button>
+    <button class="btn" onclick="triggerRun(false)">Run Now</button>
+    <button class="btn" style="background:#30363d" onclick="triggerRun(true)">Dry Run</button>
   </div>
 
   <div class="section">
@@ -404,11 +577,136 @@ setInterval(() => { fetchStats(); fetchPRs(); }, 30000);
 mod tests {
     use super::*;
 
+    // ── constant_time_eq ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_constant_time_eq_equal() {
+        assert!(constant_time_eq(b"hello", b"hello"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_different_content() {
+        assert!(!constant_time_eq(b"hello", b"world"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_different_length() {
+        assert!(!constant_time_eq(b"hello", b"helloworld"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_empty() {
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    // ── verify_api_key ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_verify_api_key_no_keys_configured() {
+        let headers = HeaderMap::new();
+        // Empty api_keys list → always allow
+        assert!(verify_api_key(&headers, None, &[]).is_ok());
+    }
+
+    #[test]
+    fn test_verify_api_key_valid_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", "secret123".parse().unwrap());
+        let keys = vec!["secret123".to_string()];
+        assert!(verify_api_key(&headers, None, &keys).is_ok());
+    }
+
+    #[test]
+    fn test_verify_api_key_invalid_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", "wrong".parse().unwrap());
+        let keys = vec!["secret123".to_string()];
+        assert_eq!(
+            verify_api_key(&headers, None, &keys),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn test_verify_api_key_via_query_param() {
+        let headers = HeaderMap::new();
+        let keys = vec!["qparam-key".to_string()];
+        assert!(verify_api_key(&headers, Some("qparam-key"), &keys).is_ok());
+    }
+
+    #[test]
+    fn test_verify_api_key_missing_key() {
+        let headers = HeaderMap::new();
+        let keys = vec!["secret".to_string()];
+        assert_eq!(
+            verify_api_key(&headers, None, &keys),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+    }
+
+    #[test]
+    fn test_verify_api_key_header_precedence_over_query() {
+        // Header present and valid; query param (if present) should be ignored
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", "header-key".parse().unwrap());
+        let keys = vec!["header-key".to_string()];
+        // query param contains a wrong value but header is correct → OK
+        assert!(verify_api_key(&headers, Some("wrong-query"), &keys).is_ok());
+    }
+
+    // ── verify_webhook_signature ──────────────────────────────────────────────
+
+    #[test]
+    fn test_verify_webhook_signature_valid() {
+        // Generate a known-good signature for "hello world" with secret "mysecret"
+        // sha256 HMAC computed: use known value
+        let payload = b"hello world";
+        let secret = "mysecret";
+
+        // Compute expected signature using the same code path
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(payload);
+        let result = mac.finalize().into_bytes();
+        let hex_sig = format!("sha256={}", hex::encode(result));
+
+        assert!(verify_webhook_signature(payload, &hex_sig, secret));
+    }
+
+    #[test]
+    fn test_verify_webhook_signature_wrong_secret() {
+        let payload = b"hello world";
+        // Signature computed with "mysecret" but verified against "wrongsecret"
+        let mut mac = Hmac::<Sha256>::new_from_slice(b"mysecret").unwrap();
+        mac.update(payload);
+        let result = mac.finalize().into_bytes();
+        let hex_sig = format!("sha256={}", hex::encode(result));
+
+        assert!(!verify_webhook_signature(payload, &hex_sig, "wrongsecret"));
+    }
+
+    #[test]
+    fn test_verify_webhook_signature_missing_prefix() {
+        assert!(!verify_webhook_signature(b"data", "abcdef1234", "secret"));
+    }
+
+    #[test]
+    fn test_verify_webhook_signature_tampered_payload() {
+        let secret = "mysecret";
+        let original = b"original payload";
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(original);
+        let result = mac.finalize().into_bytes();
+        let hex_sig = format!("sha256={}", hex::encode(result));
+
+        // Verify with a different payload
+        assert!(!verify_webhook_signature(b"tampered payload", &hex_sig, secret));
+    }
+
+    // ── router construction ───────────────────────────────────────────────────
+
     #[test]
     fn test_build_router_compiles() {
         // Verify the router can be constructed with a mock state
-        // (actual server binding tested via integration tests)
-        // This just confirms the type system is happy
         let _ = std::mem::size_of::<AppState>();
         let _ = std::mem::size_of::<HealthResponse>();
         let _ = std::mem::size_of::<StatsResponse>();
@@ -425,6 +723,7 @@ mod tests {
         assert!(DASHBOARD_HTML.contains("ContribAI"));
         assert!(DASHBOARD_HTML.contains("/api/health"));
         assert!(DASHBOARD_HTML.contains("/api/prs"));
+        // Webhook endpoint is on the router, not referenced in the static dashboard HTML
     }
 
     #[test]

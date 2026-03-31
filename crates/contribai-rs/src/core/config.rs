@@ -8,6 +8,26 @@ use std::path::{Path, PathBuf};
 
 use super::error::{ContribError, Result};
 
+/// Web server configuration (API auth + webhook).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebConfig {
+    /// API keys accepted via `X-API-Key` header or `api_key` query param.
+    /// Empty list means no authentication required.
+    #[serde(default)]
+    pub api_keys: Vec<String>,
+    /// Shared secret for verifying GitHub webhook HMAC-SHA256 signatures.
+    pub webhook_secret: Option<String>,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            api_keys: vec![],
+            webhook_secret: std::env::var("GITHUB_WEBHOOK_SECRET").ok(),
+        }
+    }
+}
+
 /// Top-level configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContribAIConfig {
@@ -35,6 +55,8 @@ pub struct ContribAIConfig {
     pub notifications: NotificationConfig,
     #[serde(default)]
     pub sandbox: SandboxConfig,
+    #[serde(default)]
+    pub web: WebConfig,
 }
 
 impl ContribAIConfig {
@@ -121,6 +143,7 @@ impl Default for ContribAIConfig {
             quotas: QuotaConfig::default(),
             notifications: NotificationConfig::default(),
             sandbox: SandboxConfig::default(),
+            web: WebConfig::default(),
         }
     }
 }
