@@ -24,9 +24,15 @@ env/
 config.yaml
 .env
 
-# SQLite memory
+# SQLite / database files (never commit these)
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
+contribai_memory*
+~/.contribai/
 
 # OS
 .DS_Store
