@@ -1,6 +1,6 @@
 # Deployment Guide
 
-**Version:** 5.0.0 | **Language:** Rust | **Last Updated:** 2026-03-31
+**Version:** 5.1.0 | **Language:** Rust | **Last Updated:** 2026-04-01
 
 ---
 
@@ -11,21 +11,21 @@
 ```bash
 # Clone repository
 git clone https://github.com/tang-vu/ContribAI.git
-cd ContribAI/crates/contribai-rs
+cd ContribAI
 
-# Build (debug)
-cargo build
-
-# Build (release, optimized)
+# Build (release, optimized) — from project root
 cargo build --release
 
+# Or install to PATH:
+cargo install --path crates/contribai-rs
+
 # Configure
-cp config.example.yaml config.yaml
+cp config.yaml.template config.yaml
 # Edit config.yaml with your API keys
 
 # Run
-./target/release/contribai-rs hunt
-./target/release/contribai-rs serve  # Web dashboard at :8787
+contribai hunt
+contribai web-server  # Web dashboard at :8787
 ```
 
 ### Option 2: Docker (Production-Ready)
@@ -47,13 +47,13 @@ docker compose up -d dashboard scheduler
 ### Option 3: Static Binary (Simplest)
 
 ```bash
-# Download pre-built binary (from releases)
-# Or build locally:
-cd crates/contribai-rs && cargo build --release
-
-# Single static binary — no runtime dependencies
-cp target/release/contribai-rs /usr/local/bin/contribai
+# Install to PATH (recommended)
+cargo install --path crates/contribai-rs
+contribai --version  # 5.1.0
 contribai --help
+
+# Or run directly from build output:
+./crates/contribai-rs/target/release/contribai --help
 ```
 
 ---
@@ -301,38 +301,58 @@ docker compose logs -f dashboard
 
 ---
 
-## CLI Commands Reference (13 Commands)
+## CLI Commands Reference (22 Commands)
 
-### Core
+### Core Operations
 
 ```bash
-contribai hunt                        # Autonomous multi-round hunting
-contribai hunt --rounds 5 --delay 15  # 5 rounds, 15min delay
 contribai run                         # Single full pipeline
-contribai run --dry-run               # Preview without PRs
-contribai target <url>                # Analyze specific repo
-contribai target <url> --dry-run      # Preview specific repo
-contribai solve <url>                 # Solve open issues
-contribai analyze <url>               # Dry-run analysis
-```
-
-### Web & Automation
-
-```bash
-contribai serve                       # Dashboard at :8787
-contribai serve --port 9000           # Custom port
-contribai schedule --cron "0 */6 * * *"  # Cron scheduler
-contribai mcp-server                  # Start MCP stdio server
-```
-
-### Status & Management
-
-```bash
-contribai status                      # PR status table (colored)
-contribai config                      # Show effective config (masked tokens)
+contribai hunt                        # Autonomous multi-round hunting
+contribai hunt --dry-run              # Preview without PRs
 contribai patrol                      # Monitor PRs for review feedback
+contribai target <url>                # Analyze specific repo
+contribai analyze <url>               # Dry-run analysis
+contribai solve <url>                 # Solve open issues
+```
+
+### Discovery & Stats
+
+```bash
+contribai stats                       # Contribution statistics
+contribai status                      # PR status table (colored)
+contribai leaderboard                 # Merge rate by repo
+contribai models                      # Available LLM models
+contribai templates                   # Contribution templates
+contribai system-status               # DB, rate limits, scheduler
+```
+
+### Interactive & Setup
+
+```bash
+contribai                             # Interactive menu (22 items)
+contribai interactive                 # ratatui TUI browser
+contribai init                        # Setup wizard
+contribai login                       # Auth status for all providers
+contribai notify-test                 # Test Slack/Discord/Telegram (real HTTP)
+```
+
+### Config
+
+```bash
+contribai config-list                 # Show all config
+contribai config-get llm.provider     # Get single value
+contribai config-set llm.provider openai # Set value
+contribai profile security-focused    # Named profile
+```
+
+### Servers & Automation
+
+```bash
+contribai web-server                  # Dashboard at :8787
+contribai web-server --port 9000      # Custom port
+contribai schedule                    # Cron scheduler
+contribai mcp-server                  # MCP stdio (Claude Desktop)
 contribai cleanup                     # Remove stale forks
-contribai stats                       # Summary statistics
 ```
 
 ---
@@ -462,5 +482,5 @@ sqlite3 ~/.contribai/memory.db "PRAGMA integrity_check;"
 ## Document Metadata
 
 - **Created:** 2026-03-28
-- **Last Updated:** 2026-03-31
-- **Version:** 5.0.0 (Rust rewrite)
+- **Last Updated:** 2026-04-01
+- **Version:** 5.1.0 (Interactive TUI + full CLI parity)
