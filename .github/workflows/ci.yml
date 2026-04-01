@@ -12,7 +12,7 @@ jobs:
     name: Rust Lint (fmt + clippy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -20,7 +20,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -39,13 +39,13 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -64,7 +64,7 @@ jobs:
     name: Rust Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -78,9 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && contains(github.event.head_commit.message, 'python')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
