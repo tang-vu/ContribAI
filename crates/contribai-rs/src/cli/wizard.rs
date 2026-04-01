@@ -22,7 +22,7 @@ pub enum LlmChoice {
 impl LlmChoice {
     pub fn all() -> &'static [&'static str] {
         &[
-            "Gemini (API Key)        — gemini-2.5-flash, fast + free tier",
+            "Gemini (API Key)        — gemini-3-flash-preview, fast + free tier",
             "Vertex AI (Google Cloud)— uses gcloud ADC, no key needed",
             "OpenAI                  — gpt-4o, gpt-4-turbo",
             "Anthropic               — claude-3-5-sonnet",
@@ -52,8 +52,8 @@ impl LlmChoice {
 
     pub fn default_model(&self) -> &'static str {
         match self {
-            Self::GeminiApiKey => "gemini-2.5-flash",
-            Self::VertexAi => "gemini-2.5-flash",
+            Self::GeminiApiKey => "gemini-3-flash-preview",
+            Self::VertexAi => "gemini-3-flash-preview",
             Self::OpenAi => "gpt-4o",
             Self::Anthropic => "claude-3-5-sonnet-20241022",
             Self::Ollama => "llama3",
@@ -416,7 +416,7 @@ github:
 
 llm:
   provider: "gemini"
-  model: "gemini-2.5-flash"
+  model: "gemini-3-flash-preview"
   api_key: ""
   temperature: 0.3
   max_tokens: 8192

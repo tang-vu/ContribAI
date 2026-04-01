@@ -395,7 +395,7 @@ mod tests {
 
 llm:
   provider: "gemini"
-  model: "gemini-2.5-flash"
+  model: "gemini-3-flash-preview"
   api_key: "sk-test"
   vertex_project: ""
 

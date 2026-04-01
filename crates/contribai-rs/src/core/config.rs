@@ -235,13 +235,13 @@ fn default_provider() -> String {
     "gemini".to_string()
 }
 fn default_model() -> String {
-    "gemini-2.5-flash".to_string()
+    "gemini-3-flash-preview".to_string()
 }
 fn default_temperature() -> f64 {
     0.3
 }
 fn default_max_tokens() -> u32 {
-    4096
+    65_536
 }
 fn default_vertex_location() -> String {
     "global".to_string()
@@ -621,7 +621,7 @@ mod tests {
     fn test_default_config() {
         let config = ContribAIConfig::default();
         assert_eq!(config.llm.provider, "gemini");
-        assert_eq!(config.llm.model, "gemini-2.5-flash");
+        assert_eq!(config.llm.model, "gemini-3-flash-preview");
         assert_eq!(config.analysis.max_context_tokens, 30_000);
         assert_eq!(config.pipeline.min_quality_score, 0.6);
     }

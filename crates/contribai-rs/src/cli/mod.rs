@@ -1490,33 +1490,33 @@ fn run_models(task_filter: Option<&str>) -> anyhow::Result<()> {
     const MODELS: &[ModelDef] = &[
         // ── Google Gemini 3.x (latest) ────────────────────────────────
         ModelDef {
-            name: "gemini-3.1-pro",
+            name: "gemini-3.1-pro-preview",
             provider: "google",
             tier: "PRO",
             coding: 10,
             analysis: 10,
             speed: 7,
-            cost: "$2.00/$12.0",
+            cost: "$1.25/$10.0",
             best_for: "analysis, code",
         },
         ModelDef {
-            name: "gemini-3-flash",
+            name: "gemini-3-flash-preview",
             provider: "google",
             tier: "FLASH",
             coding: 9,
             analysis: 9,
             speed: 9,
-            cost: "$0.50/$3.00",
+            cost: "$0.15/$0.60",
             best_for: "code, review",
         },
         ModelDef {
-            name: "gemini-3.1-flash-lite",
+            name: "gemini-3.1-flash-lite-preview",
             provider: "google",
             tier: "LITE",
             coding: 8,
             analysis: 7,
             speed: 10,
-            cost: "$0.25/$1.50",
+            cost: "$0.02/$0.10",
             best_for: "docs, review",
         },
         // ── Google Gemini 2.5 (stable) ────────────────────────────────
@@ -1702,11 +1702,23 @@ fn run_models(task_filter: Option<&str>) -> anyhow::Result<()> {
     println!(
         "  {:<20} {}",
         "analysis:".dimmed(),
-        "gemini-2.5-flash".cyan()
+        "gemini-3-flash-preview".cyan()
     );
-    println!("  {:<20} {}", "code:".dimmed(), "gemini-2.5-pro".cyan());
-    println!("  {:<20} {}", "review:".dimmed(), "gemini-2.5-flash".cyan());
-    println!("  {:<20} {}", "docs:".dimmed(), "gemini-2.5-flash".cyan());
+    println!(
+        "  {:<20} {}",
+        "code:".dimmed(),
+        "gemini-3.1-pro-preview".cyan()
+    );
+    println!(
+        "  {:<20} {}",
+        "review:".dimmed(),
+        "gemini-3-flash-preview".cyan()
+    );
+    println!(
+        "  {:<20} {}",
+        "docs:".dimmed(),
+        "gemini-3.1-flash-lite-preview".cyan()
+    );
     println!();
     Ok(())
 }

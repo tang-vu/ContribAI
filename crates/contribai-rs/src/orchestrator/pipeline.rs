@@ -161,7 +161,7 @@ impl<'a> ContribPipeline<'a> {
             decision.model.name
         } else {
             // Fallback if mutex poisoned
-            "gemini-2.5-flash".to_string()
+            "gemini-3-flash-preview".to_string()
         }
     }
 
