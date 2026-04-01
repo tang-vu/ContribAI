@@ -76,7 +76,7 @@ jobs:
   python-legacy:
     name: Python Legacy Tests (v4.1.0)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'python')
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[python]')
     steps:
       - uses: actions/checkout@v4
 

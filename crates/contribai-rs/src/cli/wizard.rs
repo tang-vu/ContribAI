@@ -62,6 +62,7 @@ impl LlmChoice {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum GithubAuthChoice {
     GhCli,
     Manual,

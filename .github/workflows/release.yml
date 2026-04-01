@@ -48,18 +48,18 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --manifest-path crates/contribai-rs/Cargo.toml
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
-          cp crates/contribai-rs/target/release/contribai \
+          cp target/${{ matrix.target }}/release/contribai \
              contribai-${{ github.ref_name }}-${{ matrix.suffix }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          Copy-Item crates/contribai-rs/target/release/contribai.exe `
+          Copy-Item target/${{ matrix.target }}/release/contribai.exe `
             contribai-${{ github.ref_name }}-${{ matrix.suffix }}
 
       - name: Extract release notes

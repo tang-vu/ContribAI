@@ -941,7 +941,7 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
 
 async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
     use console::style;
-    use dialoguer::{Select, Password, Input, Confirm};
+    use dialoguer::{Select, Password, Input};
     use crate::cli::wizard::{LlmChoice, mask_secret};
 
     print_banner();
@@ -954,7 +954,7 @@ async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
         let config = load_config(config_path).unwrap_or_default();
 
         // ── GitHub status ────────────────────────────────────────────────────
-        let gh_configured = if !config.github.token.is_empty() {
+        let _gh_configured = if !config.github.token.is_empty() {
             let last4: String = config.github.token.chars().rev().take(4)
                 .collect::<String>().chars().rev().collect();
             println!(
