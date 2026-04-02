@@ -11,8 +11,8 @@ impl ContributionGenerator<'_> {
     /// Have the LLM review the generated contribution and approve or reject it.
     ///
     /// Builds a unified diff for modified files and asks the LLM whether the
-    /// change is correct. Defaults to `true` (approved) on LLM failures to
-    /// avoid blocking contributions on transient errors.
+    /// change is correct. Defaults to `false` (rejected) on LLM failures to
+    /// ensure a fail-closed posture.
     pub(crate) async fn self_review(
         &self,
         contribution: &Contribution,
@@ -81,8 +81,8 @@ impl ContributionGenerator<'_> {
                 approved
             }
             Err(e) => {
-                warn!(error = %e, "Self-review LLM call failed, approving by default");
-                true
+                warn!(error = %e, "Self-review LLM call failed, rejecting by default");
+                false
             }
         }
     }
