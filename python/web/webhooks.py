@@ -48,12 +48,15 @@ async def github_webhook(request: Request):
         return JSONResponse({"error": "Payload too large"}, status_code=413)
 
     # Verify signature
-    if _webhook_secret:
-        signature = request.headers.get("X-Hub-Signature-256", "")
-        if not verify_webhook_signature(body, signature, _webhook_secret):
-            logger.warning("Invalid webhook signature")
-            # Bug 1 fix: use JSONResponse so FastAPI returns HTTP 403, not 200
-            return JSONResponse({"error": "Invalid signature"}, status_code=403)
+    if not _webhook_secret:
+        logger.error("Webhook secret not configured")
+        return JSONResponse({"error": "Webhook secret not configured"}, status_code=500)
+
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not verify_webhook_signature(body, signature, _webhook_secret):
+        logger.warning("Invalid webhook signature")
+        # Bug 1 fix: use JSONResponse so FastAPI returns HTTP 403, not 200
+        return JSONResponse({"error": "Invalid signature"}, status_code=403)
 
     # Parse event
     event_type = request.headers.get("X-GitHub-Event", "")
