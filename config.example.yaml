@@ -54,10 +54,20 @@ discovery:
     - python
     - javascript
     - typescript
+    - rust
   stars_range: [50, 10000]
   min_last_activity_days: 30
   require_contributing_guide: false
   topics: []
+  # Watchlist: specific repos to sweep with `contribai watchlist`
+  # Skips discovery — runs targeted analysis on each repo in order.
+  # Format: "owner/repo"
+  watchlist: []
+  # Example:
+  # watchlist:
+  #   - "myorg/backend-api"
+  #   - "myorg/frontend-app"
+  #   - "myorg/infra-tools"
 
 storage:
   db_path: "~/.contribai/memory.db"

@@ -385,6 +385,12 @@ pub struct DiscoveryConfig {
     pub stars_max: i64,
     #[serde(default = "default_disc_max_results")]
     pub max_results: usize,
+    /// Watchlist of specific repositories to analyze instead of discovering.
+    /// Each entry is "owner/repo" (e.g., "myorg/myproject").
+    /// When non-empty, `contribai watchlist` iterates these repos
+    /// using the targeted pipeline instead of search-based discovery.
+    #[serde(default)]
+    pub watchlist: Vec<String>,
 }
 
 fn default_disc_languages() -> Vec<String> {
@@ -423,6 +429,7 @@ impl Default for DiscoveryConfig {
             stars_min: default_disc_stars_min(),
             stars_max: default_disc_stars_max(),
             max_results: default_disc_max_results(),
+            watchlist: Vec::new(),
         }
     }
 }
