@@ -225,6 +225,182 @@ impl GeminiProvider {
             Ok((url, None))
         }
     }
+
+    // ── Context Caching ──────────────────────────────────────────────────────
+
+    /// Create a cached content resource on Gemini.
+    ///
+    /// Uploads the static `context` as a cached content object with 1-hour TTL.
+    /// Returns the cache name (e.g. `cachedContents/abc123`) for subsequent calls.
+    /// Returns `None` if caching fails (gracefully degrades to inline context).
+    pub async fn create_cached_content(
+        &self,
+        context: &str,
+        system_instruction: Option<&str>,
+    ) -> Option<String> {
+        let (cache_url, bearer) = if !self.vertex_project.is_empty() {
+            let api_version = if self.model.contains("preview") {
+                "v1beta1"
+            } else {
+                "v1"
+            };
+            let hostname = if self.vertex_location == "global" {
+                "aiplatform.googleapis.com".to_string()
+            } else {
+                format!("{}-aiplatform.googleapis.com", self.vertex_location)
+            };
+            let url = format!(
+                "https://{}/{}/projects/{}/locations/{}/cachedContents",
+                hostname, api_version, self.vertex_project, self.vertex_location
+            );
+            let token = self.get_cached_token().ok()?;
+            (url, Some(token))
+        } else {
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/cachedContents?key={}",
+                self.api_key
+            );
+            (url, None)
+        };
+
+        let mut body = json!({
+            "model": format!("models/{}", self.model),
+            "contents": [{
+                "role": "user",
+                "parts": [{ "text": context }]
+            }],
+            "ttl": "3600s"
+        });
+
+        if let Some(sys) = system_instruction {
+            body["systemInstruction"] = json!({
+                "parts": [{ "text": sys }]
+            });
+        }
+
+        // For Vertex AI, model format is different
+        if !self.vertex_project.is_empty() {
+            body["model"] = json!(format!(
+                "projects/{}/locations/{}/publishers/google/models/{}",
+                self.vertex_project, self.vertex_location, self.model
+            ));
+        }
+
+        let mut req = self.client.post(&cache_url).json(&body);
+        if let Some(ref token) = bearer {
+            req = req.bearer_auth(token);
+        }
+
+        match req.send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                if status.is_success() {
+                    let data: Value = serde_json::from_str(&text).ok()?;
+                    let name = data["name"].as_str()?.to_string();
+                    info!(cache = %name, "📦 Context cached (1h TTL)");
+                    Some(name)
+                } else {
+                    tracing::debug!(status = %status, "Context caching unavailable, using inline");
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Context caching request failed");
+                None
+            }
+        }
+    }
+
+    /// Complete using a cached content reference instead of inline context.
+    ///
+    /// Falls back to normal `complete()` if cache_name is empty.
+    pub async fn complete_with_cache(
+        &self,
+        cache_name: &str,
+        prompt: &str,
+        system: Option<&str>,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> Result<String> {
+        if cache_name.is_empty() {
+            return self.complete(prompt, system, temperature, max_tokens).await;
+        }
+
+        let temp = temperature.unwrap_or(self.temperature);
+        let max_tok = max_tokens.unwrap_or(self.max_tokens);
+
+        let (url, bearer) = self.build_endpoint()?;
+
+        let mut body = json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{ "text": prompt }]
+            }],
+            "generationConfig": {
+                "temperature": temp,
+                "maxOutputTokens": max_tok,
+            },
+            "cachedContent": cache_name
+        });
+
+        if let Some(sys) = system {
+            body["systemInstruction"] = json!({
+                "parts": [{ "text": sys }]
+            });
+        }
+
+        let mut req = self.client.post(&url).json(&body);
+        if let Some(token) = bearer {
+            req = req.bearer_auth(token);
+        }
+        let response = req
+            .send()
+            .await
+            .map_err(|e| ContribError::Llm(format!("Gemini HTTP error: {}", e)))?;
+
+        let status = response.status();
+        let body_text = response
+            .text()
+            .await
+            .map_err(|e| ContribError::Llm(format!("Gemini response read: {}", e)))?;
+
+        let data: Value = serde_json::from_str(&body_text).map_err(|e| {
+            let preview = if body_text.len() > 500 {
+                &body_text[..500]
+            } else {
+                &body_text
+            };
+            ContribError::Llm(format!(
+                "Gemini JSON parse: {} — response preview: {}",
+                e, preview
+            ))
+        })?;
+
+        if !status.is_success() {
+            let error_msg = data["error"]["message"].as_str().unwrap_or("Unknown error");
+            // Cache expired/invalid → fall back to regular completion
+            if status.as_u16() == 400 || status.as_u16() == 404 {
+                tracing::debug!(cache = cache_name, "Cache invalid, falling back");
+                return self.complete(prompt, system, temperature, max_tokens).await;
+            }
+            return Err(ContribError::Llm(format!(
+                "Gemini API error {}: {}",
+                status, error_msg
+            )));
+        }
+
+        let text = data["candidates"][0]["content"]["parts"][0]["text"]
+            .as_str()
+            .or_else(|| {
+                data["candidates"][0]["content"]["parts"]
+                    .as_array()
+                    .and_then(|parts| parts.iter().filter_map(|p| p["text"].as_str()).next())
+            })
+            .unwrap_or("");
+
+        Ok(text.to_string())
+    }
 }
 
 #[async_trait]

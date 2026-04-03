@@ -66,6 +66,7 @@ impl ContribAIConfig {
             .map_err(|e| ContribError::Config(format!("Cannot read {}: {}", path.display(), e)))?;
         let mut config: Self = serde_yaml::from_str(&content)?;
         config.resolve_secrets();
+        config.discovery.resolve_stars_range();
         Ok(config)
     }
 
@@ -385,6 +386,9 @@ pub struct DiscoveryConfig {
     pub stars_max: i64,
     #[serde(default = "default_disc_max_results")]
     pub max_results: usize,
+    /// Alternative YAML key: `stars_range: [50, 5000]` → sets stars_min/max.
+    #[serde(default, skip_serializing)]
+    pub stars_range: Option<Vec<i64>>,
 }
 
 fn default_disc_languages() -> Vec<String> {
@@ -423,6 +427,19 @@ impl Default for DiscoveryConfig {
             stars_min: default_disc_stars_min(),
             stars_max: default_disc_stars_max(),
             max_results: default_disc_max_results(),
+            stars_range: None,
+        }
+    }
+}
+
+impl DiscoveryConfig {
+    /// Apply `stars_range` override if present (called after deserialization).
+    pub fn resolve_stars_range(&mut self) {
+        if let Some(ref range) = self.stars_range {
+            if range.len() >= 2 {
+                self.stars_min = range[0];
+                self.stars_max = range[1];
+            }
         }
     }
 }

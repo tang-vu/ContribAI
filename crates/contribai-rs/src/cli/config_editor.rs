@@ -112,6 +112,26 @@ pub const KNOWN_KEYS: &[KeyDef] = &[
         description: "Routing strategy",
         valid_values: Some(&["performance", "balanced", "economy"]),
     },
+    KeyDef {
+        key: "discovery.languages",
+        description: "Languages to discover (comma-separated in YAML)",
+        valid_values: None,
+    },
+    KeyDef {
+        key: "discovery.stars_range",
+        description: "Stars range [min, max]",
+        valid_values: None,
+    },
+    KeyDef {
+        key: "discovery.max_results",
+        description: "Max repos per search",
+        valid_values: None,
+    },
+    KeyDef {
+        key: "pipeline.risk_tolerance",
+        description: "Risk tolerance (low/medium/high)",
+        valid_values: Some(&["low", "medium", "high"]),
+    },
 ];
 
 const SECRET_KEYS: &[&str] = &["llm.api_key", "github.token", "web.webhook_secret"];
@@ -329,10 +349,14 @@ pub fn replace_yaml_value(yaml: &str, dotted_key: &str, new_value: &str) -> (Str
 
 fn format_yaml_value(v: &str) -> String {
     // Booleans and numbers: no quotes
-    if v == "true" || v == "false" {
+    if v == "true" || v == "false" || v == "null" {
         return v.to_string();
     }
     if v.parse::<f64>().is_ok() {
+        return v.to_string();
+    }
+    // YAML flow sequences/maps: pass through as-is (e.g. [100, 50000])
+    if (v.starts_with('[') && v.ends_with(']')) || (v.starts_with('{') && v.ends_with('}')) {
         return v.to_string();
     }
     // Strings: wrap in quotes
@@ -467,5 +491,9 @@ web:
         assert_eq!(format_yaml_value("true"), "true");
         assert_eq!(format_yaml_value("42"), "42");
         assert_eq!(format_yaml_value("gemini"), "\"gemini\"");
+        // YAML lists/maps should NOT be quoted
+        assert_eq!(format_yaml_value("[100, 50000]"), "[100, 50000]");
+        assert_eq!(format_yaml_value("[50, 5000]"), "[50, 5000]");
+        assert_eq!(format_yaml_value("{key: val}"), "{key: val}");
     }
 }

@@ -4,6 +4,7 @@
 //! arrow-key menus, and all operations accessible without editing YAML.
 
 pub mod config_editor;
+#[cfg(feature = "tui")]
 pub mod tui;
 pub mod wizard;
 
@@ -43,6 +44,10 @@ enum Commands {
         /// Dry run — analyze but don't create PRs
         #[arg(long)]
         dry_run: bool,
+
+        /// Approve HIGH risk changes for auto-submission
+        #[arg(long)]
+        approve: bool,
     },
 
     /// Hunt mode: aggressive multi-round discovery
@@ -62,6 +67,10 @@ enum Commands {
         /// Dry run
         #[arg(long)]
         dry_run: bool,
+
+        /// Approve HIGH risk changes for auto-submission
+        #[arg(long)]
+        approve: bool,
     },
 
     /// Monitor open PRs for review comments and respond
@@ -242,6 +251,7 @@ impl Cli {
                 language,
                 stars,
                 dry_run,
+                approve,
             } => {
                 print_banner();
                 let config = load_config(self.config.as_deref())?;
@@ -253,6 +263,9 @@ impl Cli {
                 }
                 if let Some(s) = &stars {
                     println!("   {}: {}", "Stars".dimmed(), s.cyan());
+                }
+                if approve {
+                    println!("   {}: {}", "Approve".dimmed(), "HIGH risk enabled".yellow());
                 }
                 println!();
 
@@ -270,13 +283,14 @@ impl Cli {
                     .spawn_logger(&event_bus);
                 println!("   {}: {}", "Event log".dimmed(), log_path.display());
 
-                let pipeline = contribai::orchestrator::pipeline::ContribPipeline::new(
+                let mut pipeline = contribai::orchestrator::pipeline::ContribPipeline::new(
                     &config,
                     &github,
                     llm.as_ref(),
                     &memory,
                     &event_bus,
                 );
+                pipeline.set_approve_high_risk(approve);
 
                 let result = pipeline.run(None, dry_run).await?;
                 print_result(&result, dry_run);
@@ -288,6 +302,7 @@ impl Cli {
                 delay: _delay,
                 language,
                 dry_run,
+                approve,
             } => {
                 print_banner();
                 let config = load_config(self.config.as_deref())?;
@@ -300,6 +315,9 @@ impl Cli {
                 );
                 if let Some(lang) = &language {
                     println!("   {}: {}", "Language".dimmed(), lang.cyan());
+                }
+                if approve {
+                    println!("   {}: {}", "Approve".dimmed(), "HIGH risk enabled".yellow());
                 }
                 println!();
 
@@ -316,13 +334,14 @@ impl Cli {
                 let _log_handle = contribai::core::events::FileEventLogger::new(&log_path)
                     .spawn_logger(&event_bus);
 
-                let pipeline = contribai::orchestrator::pipeline::ContribPipeline::new(
+                let mut pipeline = contribai::orchestrator::pipeline::ContribPipeline::new(
                     &config,
                     &github,
                     llm.as_ref(),
                     &memory,
                     &event_bus,
                 );
+                pipeline.set_approve_high_risk(approve);
 
                 // Run pipeline for each round
                 let mut total = contribai::orchestrator::pipeline::PipelineResult::default();
@@ -559,6 +578,7 @@ impl Cli {
                 Ok(())
             }
 
+            #[cfg(feature = "web")]
             Commands::WebServer { host, port } => {
                 print_banner();
                 println!(
@@ -572,6 +592,11 @@ impl Cli {
                 contribai::web::run_server(memory, &config, &host, port)
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
+            }
+
+            #[cfg(not(feature = "web"))]
+            Commands::WebServer { .. } => {
+                anyhow::bail!("Web dashboard not available. Build with --features web");
             }
 
             Commands::Analyze { url } => {
@@ -857,11 +882,48 @@ impl Cli {
                                 &memory,
                                 &event_bus,
                             );
-                            pipeline
-                                .run(None, cfg.pipeline.dry_run)
-                                .await
-                                .map(|_| ())
-                                .map_err(|e| e.to_string())
+
+                            // KAIROS: Run → Patrol → Dream (full autonomous loop)
+                            tracing::info!("🔄 KAIROS cycle: Run → Patrol → Dream");
+
+                            // 1. Pipeline run (discover + analyze + PR)
+                            if let Err(e) = pipeline.run(None, cfg.pipeline.dry_run).await {
+                                tracing::warn!(error = %e, "Pipeline run had errors");
+                            }
+
+                            // 2. Patrol (respond to review comments on open PRs)
+                            let mut patrol = contribai::pr::patrol::PrPatrol::new(
+                                &github,
+                                llm.as_ref(),
+                            );
+                            match memory.get_prs(Some("open"), 50) {
+                                Ok(prs) => {
+                                    let pr_values: Vec<serde_json::Value> = prs
+                                        .iter()
+                                        .map(|pr| {
+                                            serde_json::json!({
+                                                "repo": pr.get("repo").unwrap_or(&String::new()),
+                                                "pr_number": pr.get("pr_number").unwrap_or(&String::new()).parse::<i64>().unwrap_or(0),
+                                                "status": pr.get("status").unwrap_or(&String::new()),
+                                            })
+                                        })
+                                        .collect();
+                                    match patrol.patrol(&pr_values, false).await {
+                                        Ok(r) => tracing::info!(
+                                            checked = r.prs_checked,
+                                            fixes = r.fixes_pushed,
+                                            "Patrol complete"
+                                        ),
+                                        Err(e) => tracing::warn!(error = %e, "Patrol had errors"),
+                                    }
+                                }
+                                Err(e) => tracing::warn!(error = %e, "Could not load PR records"),
+                            }
+
+                            // 3. Dream (consolidate memory if gates are met)
+                            pipeline.maybe_dream();
+
+                            Ok(())
                         }
                     })
                     .await;
@@ -914,9 +976,15 @@ impl Cli {
 
             Commands::SystemStatus => run_system_status(self.config.as_deref()).await,
 
+            #[cfg(feature = "tui")]
             Commands::Interactive => {
                 let config = load_config(self.config.as_deref())?;
                 tui::run_interactive_tui(&config)
+            }
+
+            #[cfg(not(feature = "tui"))]
+            Commands::Interactive => {
+                anyhow::bail!("TUI not available. Build with --features tui");
             }
 
             Commands::Dream { force } => {
@@ -982,6 +1050,7 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
             language: None,
             stars: None,
             dry_run: false,
+            approve: false,
         },
         2 => {
             let url: String = dialoguer::Input::new()
@@ -1013,6 +1082,7 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
             delay: 30,
             language: None,
             dry_run: false,
+            approve: false,
         },
         7 => Commands::Stats,
         8 => Commands::Leaderboard { limit: 20 },

@@ -891,6 +891,44 @@ impl Memory {
 
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
+
+    /// Get consolidated repo profile from dream data.
+    ///
+    /// Returns `None` if no profile exists yet (dream hasn't run for this repo).
+    pub fn get_repo_profile(&self, repo: &str) -> Result<Option<RepoPreferences>> {
+        let db = self.lock_db()?;
+        let result = db.query_row(
+            "SELECT preferred_types, rejected_types, merge_rate, avg_review_hours, notes
+             FROM repo_preferences WHERE repo = ?1",
+            params![repo],
+            |row| {
+                let preferred_str: String = row.get(0)?;
+                let rejected_str: String = row.get(1)?;
+                let merge_rate: f64 = row.get(2)?;
+                let avg_review_hours: f64 = row.get(3)?;
+                let notes: String = row.get(4)?;
+
+                let preferred: Vec<String> =
+                    serde_json::from_str(&preferred_str).unwrap_or_default();
+                let rejected: Vec<String> =
+                    serde_json::from_str(&rejected_str).unwrap_or_default();
+
+                Ok(RepoPreferences {
+                    preferred_types: preferred,
+                    rejected_types: rejected,
+                    merge_rate,
+                    avg_review_hours,
+                    notes,
+                })
+            },
+        );
+
+        match result {
+            Ok(profile) => Ok(Some(profile)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(ContribError::Config(format!("DB error: {}", e))),
+        }
+    }
 }
 
 /// Result of a dream consolidation pass.

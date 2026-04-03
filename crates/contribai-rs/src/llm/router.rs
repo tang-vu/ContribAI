@@ -115,9 +115,9 @@ impl TaskRouter {
             reason = "Planning always → Pro".into();
             fallback = gemini_3_flash();
         }
-        if task_type == TaskType::Bulk {
+        if task_type == TaskType::Bulk || task_type == TaskType::Triage {
             model = gemini_3_1_flash_lite();
-            reason = "Bulk → Flash Lite (cost)".into();
+            reason = format!("{} → Flash Lite (cost)", task_type);
             fallback = gemini_3_flash();
         }
 

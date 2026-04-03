@@ -16,6 +16,7 @@ use crate::core::events::{Event, EventBus, EventType};
 use crate::core::middleware::{build_default_chain, MiddlewareChain, PipelineContext};
 use crate::core::models::{AnalysisResult, DiscoveryCriteria, Finding, Repository};
 use crate::generator::engine::ContributionGenerator;
+use crate::generator::risk::{classify_risk, is_within_tolerance};
 use crate::generator::scorer::QualityScorer;
 use crate::github::client::GitHubClient;
 use crate::github::discovery::RepoDiscovery;
@@ -93,6 +94,8 @@ pub struct ContribPipeline<'a> {
     scorer: QualityScorer,
     middleware_chain: MiddlewareChain,
     router: std::sync::Mutex<TaskRouter>,
+    /// Allow HIGH risk changes to auto-submit (set via --approve flag).
+    approve_high_risk: bool,
 }
 
 impl<'a> ContribPipeline<'a> {
@@ -134,6 +137,7 @@ impl<'a> ContribPipeline<'a> {
             scorer: QualityScorer::new(min_quality),
             middleware_chain,
             router: std::sync::Mutex::new(router),
+            approve_high_risk: false,
         }
     }
 
@@ -147,6 +151,11 @@ impl<'a> ContribPipeline<'a> {
         event_bus: &'a EventBus,
     ) -> Self {
         Self::new(config, github, llm, memory, event_bus)
+    }
+
+    /// Set whether HIGH risk changes should be auto-submitted.
+    pub fn set_approve_high_risk(&mut self, approve: bool) {
+        self.approve_high_risk = approve;
     }
 
     /// Get model name for a given task type via the router.
@@ -350,6 +359,9 @@ impl<'a> ContribPipeline<'a> {
                     .with_data("findings", result.findings_total as i64),
             )
             .await;
+
+        // ── v5.4: Auto-trigger dream consolidation if gates pass ─────
+        self.maybe_dream();
 
         Ok(result)
     }
@@ -563,7 +575,30 @@ impl<'a> ContribPipeline<'a> {
             findings = total.findings_total,
             "🏁 Hunt complete"
         );
+
+        // ── v5.4: Auto-trigger dream consolidation if gates pass ─────
+        self.maybe_dream();
+
         Ok(total)
+    }
+
+    /// Check dream gates and run consolidation if met (non-blocking).
+    pub fn maybe_dream(&self) {
+        match self.memory.should_dream() {
+            Ok(true) => {
+                info!("🌙 Dream gates passed — running memory consolidation");
+                match self.memory.run_dream() {
+                    Ok(r) => info!(
+                        repos = r.repos_profiled,
+                        pruned = r.entries_pruned,
+                        "🌙 Dream complete"
+                    ),
+                    Err(e) => warn!("Dream consolidation failed: {}", e),
+                }
+            }
+            Ok(false) => debug!("Dream gates not yet met"),
+            Err(e) => debug!("Dream gate check failed: {}", e),
+        }
     }
 
     /// Process a single repo in hunt mode.
@@ -933,12 +968,49 @@ impl<'a> ContribPipeline<'a> {
                         continue;
                     }
 
+                    // ── v5.4: Risk classification gate ────────────────────
+                    let files_changed: Vec<String> = contribution
+                        .changes
+                        .iter()
+                        .map(|f| f.path.clone())
+                        .collect();
+                    let diff_lines: usize = contribution
+                        .changes
+                        .iter()
+                        .map(|f| f.new_content.lines().count())
+                        .sum();
+                    let risk = classify_risk(
+                        &contribution.contribution_type.to_string(),
+                        &files_changed,
+                        diff_lines,
+                    );
+
+                    let tolerance = &self.config.pipeline.risk_tolerance;
+                    if !is_within_tolerance(risk.level, tolerance) && !self.approve_high_risk {
+                        warn!(
+                            title = %contribution.title,
+                            risk = %risk.level,
+                            reason = %risk.reason,
+                            tolerance = %tolerance,
+                            "⛔ Risk too high — skipping (use --approve to override)"
+                        );
+                        continue;
+                    }
+
+                    info!(
+                        title = %contribution.title,
+                        risk = %risk.level,
+                        reason = %risk.reason,
+                        "🛡️ Risk: {}", risk.level
+                    );
+
                     result.contributions_generated += 1;
 
                     if dry_run {
                         info!(
                             title = %contribution.title,
                             score = report.score,
+                            risk = %risk.level,
                             "🏃 [DRY RUN] Would create PR"
                         );
                     } else {

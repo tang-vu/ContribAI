@@ -15,6 +15,8 @@ pub enum TaskType {
     Bulk,
     Planning,
     Multimodal,
+    /// Lightweight triage/screening — always uses cheapest model.
+    Triage,
 }
 
 impl fmt::Display for TaskType {
@@ -28,6 +30,7 @@ impl fmt::Display for TaskType {
             Self::Bulk => write!(f, "bulk"),
             Self::Planning => write!(f, "planning"),
             Self::Multimodal => write!(f, "multimodal"),
+            Self::Triage => write!(f, "triage"),
         }
     }
 }
@@ -138,7 +141,7 @@ pub fn gemini_3_1_flash_lite() -> ModelSpec {
         reasoning: 68,
         speed: 95,
         multimodal: 60,
-        best_for: vec![TaskType::Bulk, TaskType::Docs, TaskType::QuickFix],
+        best_for: vec![TaskType::Bulk, TaskType::Docs, TaskType::QuickFix, TaskType::Triage],
         description: "High-volume, cost-sensitive.".into(),
     }
 }

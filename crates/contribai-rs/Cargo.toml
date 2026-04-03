@@ -1,6 +1,6 @@
 [package]
 name = "contribai"
-version = "5.4.1"
+version = "5.4.2"
 edition = "2021"
 authors = ["tang-vu <tang.vu@contribai.dev>"]
 description = "AI agent that autonomously contributes to open source projects on GitHub"
@@ -68,10 +68,10 @@ futures = "0.3"
 async-trait = "0.1"
 which = "7"
 
-# Web server (dashboard API)
-axum = { version = "0.7", features = ["json", "query"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+# Web server (dashboard API) — gated behind `web` feature
+axum = { version = "0.7", features = ["json", "query"], optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
 
 # HMAC-SHA256 for webhook signature verification
 hmac = "0.12"
@@ -86,9 +86,14 @@ indicatif = "0.17"
 dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 console = "0.15"
 
-# Terminal UI
-ratatui = "0.29"
-crossterm = { version = "0.28", features = ["event-stream"] }
+# Terminal UI — gated behind `tui` feature
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", features = ["event-stream"], optional = true }
+
+[features]
+default = ["web", "tui"]
+web = ["dep:axum", "dep:tower", "dep:tower-http"]
+tui = ["dep:ratatui", "dep:crossterm"]
 
 [dev-dependencies]
 mockall = "0.13"

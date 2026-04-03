@@ -78,7 +78,15 @@ impl<'a> CodeAnalyzer<'a> {
 
         // 2. Fetch file contents for selected files
         let mut file_contents: HashMap<String, String> = HashMap::new();
-        for path in &analyzable {
+        let total_files = analyzable.len();
+        for (i, path) in analyzable.iter().enumerate() {
+            if (i + 1) % 50 == 0 || i + 1 == total_files {
+                info!(
+                    repo = %repo.full_name,
+                    progress = format!("{}/{}", i + 1, total_files),
+                    "📥 Fetching file contents"
+                );
+            }
             match self
                 .github
                 .get_file_content(&repo.owner, &repo.name, path, None)
@@ -124,10 +132,28 @@ impl<'a> CodeAnalyzer<'a> {
         let context = self.build_context(repo, &file_contents, &all_symbols, &top_files);
         let mut all_findings: Vec<Finding> = Vec::new();
 
-        for analyzer_name in &self.config.enabled_analyzers {
-            match self.run_analyzer(analyzer_name, &context).await {
-                Ok(findings) => all_findings.extend(findings),
-                Err(e) => warn!(analyzer = analyzer_name, error = %e, "Analyzer failed"),
+        // Run all analyzers in parallel (~3-4x speedup vs sequential)
+        let analyzer_futures: Vec<_> = self
+            .config
+            .enabled_analyzers
+            .iter()
+            .map(|name| self.run_analyzer(name, &context))
+            .collect();
+
+        info!(
+            analyzers = self.config.enabled_analyzers.len(),
+            "🚀 Running analyzers in parallel"
+        );
+        let results = futures::future::join_all(analyzer_futures).await;
+
+        for (i, result) in results.into_iter().enumerate() {
+            let name = &self.config.enabled_analyzers[i];
+            match result {
+                Ok(findings) => {
+                    info!(analyzer = name, findings = findings.len(), "Analyzer complete");
+                    all_findings.extend(findings);
+                }
+                Err(e) => warn!(analyzer = name, error = %e, "Analyzer failed"),
             }
         }
 

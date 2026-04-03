@@ -148,6 +148,9 @@ impl<'a> PrManager<'a> {
     }
 
     /// Fork if not already forked.
+    ///
+    /// After forking, waits for GitHub propagation (forks can take 5-30s
+    /// to become accessible via the API).
     async fn fork_if_needed(&self, username: &str, repo: &Repository) -> Result<Repository> {
         // Check if fork exists
         match self.github.get_repo_details(username, &repo.name).await {
@@ -159,7 +162,35 @@ impl<'a> PrManager<'a> {
         }
 
         // Create fork
-        self.github.fork_repository(&repo.owner, &repo.name).await
+        let fork = self.github.fork_repository(&repo.owner, &repo.name).await?;
+
+        // Wait for fork to become accessible (GitHub propagation delay).
+        // Retry with backoff: 5s, 10s, 15s (total max ~30s).
+        for attempt in 1..=3u32 {
+            let delay = std::time::Duration::from_secs(5 * attempt as u64);
+            info!(
+                fork = %fork.full_name,
+                attempt,
+                delay_secs = delay.as_secs(),
+                "⏳ Waiting for fork propagation"
+            );
+            tokio::time::sleep(delay).await;
+
+            match self.github.get_repo_details(&fork.owner, &fork.name).await {
+                Ok(ready) => {
+                    info!(fork = %ready.full_name, "Fork ready");
+                    return Ok(ready);
+                }
+                Err(e) => {
+                    if attempt == 3 {
+                        warn!(fork = %fork.full_name, error = %e, "Fork not ready after 3 attempts");
+                    }
+                }
+            }
+        }
+
+        // Return the original fork data as fallback
+        Ok(fork)
     }
 
     /// Generate a natural-looking branch name.
