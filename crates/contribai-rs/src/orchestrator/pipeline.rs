@@ -360,8 +360,9 @@ impl<'a> ContribPipeline<'a> {
 
         // 2. Process each repo through middleware chain first
         for repo in &repos {
-            if self.memory.has_analyzed(&repo.full_name)? {
-                info!(repo = %repo.full_name, "Skipping (already analyzed)");
+            // Skip repos analyzed within the last 7 days
+            if self.memory.has_analyzed_since(&repo.full_name, 7)? {
+                info!(repo = %repo.full_name, "Skipping (analyzed within 7 days)");
                 continue;
             }
 
@@ -493,8 +494,8 @@ impl<'a> ContribPipeline<'a> {
 
             let stars = star_tiers[((rnd - 1) as usize) % star_tiers.len()];
             let sort = sort_orders[((rnd - 1) as usize) % sort_orders.len()];
-            // Cycle through pages: round 1 → page 1, round 2 → page 2, etc.
-            let page = ((rnd - 1) / sort_orders.len() as u32) + 1;
+            // Each round uses a different page for variety
+            let page = rnd;
             let criteria = DiscoveryCriteria {
                 languages: hunt_langs.iter().take(2).cloned().collect(),
                 stars_min: stars.0,
@@ -546,7 +547,7 @@ impl<'a> ContribPipeline<'a> {
             // Filter to repos that merge external PRs
             let mut targets: Vec<Repository> = Vec::new();
             for repo in repos.iter().take(5) {
-                if self.memory.has_analyzed(&repo.full_name).unwrap_or(false) {
+                if self.memory.has_analyzed_since(&repo.full_name, 7).unwrap_or(false) {
                     continue;
                 }
                 if let Ok(prs) = self
@@ -768,7 +769,7 @@ impl<'a> ContribPipeline<'a> {
                     let (owner, repo_name) = (parts[parts.len() - 2], parts[parts.len() - 1]);
                     let full_name = format!("{owner}/{repo_name}");
 
-                    if self.memory.has_analyzed(&full_name).unwrap_or(false) {
+                    if self.memory.has_analyzed_since(&full_name, 7).unwrap_or(false) {
                         continue;
                     }
 

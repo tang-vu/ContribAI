@@ -313,7 +313,7 @@ impl Cli {
 
             Commands::Hunt {
                 rounds,
-                delay: _delay,
+                delay,
                 language,
                 dry_run,
                 approve,
@@ -361,31 +361,9 @@ impl Cli {
                 );
                 pipeline.set_approve_high_risk(approve);
 
-                // Run pipeline for each round
-                let mut total = contribai::orchestrator::pipeline::PipelineResult::default();
-                for rnd in 1..=rounds {
-                    println!(
-                        "\n{} Round {}/{} {}",
-                        "🔥".bold(),
-                        rnd.to_string().cyan(),
-                        rounds,
-                        "━".repeat(40).dimmed()
-                    );
-
-                    match pipeline.run(None, dry_run).await {
-                        Ok(result) => {
-                            total.repos_analyzed += result.repos_analyzed;
-                            total.findings_total += result.findings_total;
-                            total.contributions_generated += result.contributions_generated;
-                            total.prs_created += result.prs_created;
-                            total.errors.extend(result.errors);
-                        }
-                        Err(e) => {
-                            println!("  {} {}", "Error:".red(), e);
-                            total.errors.push(e.to_string());
-                        }
-                    }
-                }
+                let total = pipeline
+                    .hunt(rounds, delay as u64, dry_run, "both")
+                    .await?;
 
                 print_result(&total, dry_run);
                 Ok(())

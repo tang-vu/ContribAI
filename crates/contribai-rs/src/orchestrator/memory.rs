@@ -191,13 +191,30 @@ impl Memory {
 
     // ── Repos ──────────────────────────────────────────────────────────────
 
-    /// Check if a repo has been analyzed before.
+    /// Check if a repo has been analyzed before (no time limit).
     pub fn has_analyzed(&self, full_name: &str) -> Result<bool> {
         let db = self.lock_db()?;
         let exists: bool = db
             .query_row(
                 "SELECT 1 FROM analyzed_repos WHERE full_name = ?1",
                 params![full_name],
+                |_| Ok(true),
+            )
+            .optional()
+            .map_err(|e| ContribError::Config(format!("DB error: {}", e)))?
+            .unwrap_or(false);
+        Ok(exists)
+    }
+
+    /// Check if a repo was analyzed within the last `days` days.
+    /// Returns false if analyzed longer ago (allows re-analysis).
+    pub fn has_analyzed_since(&self, full_name: &str, days: i64) -> Result<bool> {
+        let db = self.lock_db()?;
+        let exists: bool = db
+            .query_row(
+                "SELECT 1 FROM analyzed_repos WHERE full_name = ?1
+                 AND analyzed_at > datetime('now', ?2)",
+                params![full_name, format!("-{} days", days)],
                 |_| Ok(true),
             )
             .optional()
@@ -1118,6 +1135,18 @@ mod tests {
 
         mem.record_analysis("test/repo", "python", 100, 5).unwrap();
         assert!(mem.has_analyzed("test/repo").unwrap());
+    }
+
+    #[test]
+    fn test_analyzed_since() {
+        let mem = test_memory();
+        assert!(!mem.has_analyzed_since("test/repo", 7).unwrap());
+
+        mem.record_analysis("test/repo", "python", 100, 5).unwrap();
+        // Just recorded — should be within 7 days
+        assert!(mem.has_analyzed_since("test/repo", 7).unwrap());
+        // 0-day window should still match (within same day)
+        assert!(mem.has_analyzed_since("test/repo", 0).unwrap());
     }
 
     #[test]
