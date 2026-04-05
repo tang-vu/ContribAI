@@ -1819,7 +1819,7 @@ async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                     .interact()?;
                 let choice = LlmChoice::from_index(provider_idx);
 
-                let (api_key, vertex_project) = match choice {
+                let (api_key, base_url, vertex_project) = match choice {
                     LlmChoice::VertexAi => {
                         println!(
                             "  {}",
@@ -1829,14 +1829,20 @@ async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                             .with_prompt("Google Cloud Project ID")
                             .default(std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_default())
                             .interact_text()?;
-                        (String::new(), proj)
+                        (String::new(), String::new(), proj)
                     }
                     LlmChoice::Ollama => {
                         println!(
                             "  {}",
                             style("Make sure Ollama is running: https://ollama.ai").dim()
                         );
-                        (String::new(), String::new())
+                        let default_url = "http://localhost:11434";
+                        let url: String = Input::new()
+                            .with_prompt("Ollama base URL")
+                            .default(default_url.into())
+                            .interact_text()
+                            .unwrap_or_else(|_| default_url.into());
+                        (String::new(), url, String::new())
                     }
                     _ => {
                         let env_hint = match choice {
@@ -1849,11 +1855,29 @@ async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                             "  {}",
                             style(format!("Get your key at: {}", env_hint)).dim()
                         );
+                        let default_url = match choice {
+                            LlmChoice::OpenAi => "https://api.openai.com/v1",
+                            LlmChoice::Anthropic => "https://api.anthropic.com/v1",
+                            _ => "",
+                        };
+                        let base_url: String = if default_url.is_empty() {
+                            String::new()
+                        } else {
+                            Input::new()
+                                .with_prompt(format!(
+                                    "{} base URL (optional)",
+                                    choice.provider_name()
+                                ))
+                                .default(default_url.into())
+                                .allow_empty(true)
+                                .interact_text()
+                                .unwrap_or_default()
+                        };
                         let key: String = Password::new()
                             .with_prompt(format!("{} API Key (hidden)", choice.provider_name()))
                             .allow_empty_password(true)
                             .interact()?;
-                        (key, String::new())
+                        (key, base_url, String::new())
                     }
                 };
 
@@ -1877,6 +1901,8 @@ async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                         *line = format!("  model: \"{}\"", choice.default_model());
                     } else if trimmed.starts_with("api_key:") {
                         *line = format!("  api_key: \"{}\"", api_key);
+                    } else if trimmed.starts_with("base_url:") {
+                        *line = format!("  base_url: \"{}\"", base_url);
                     } else if trimmed.starts_with("vertex_project:") {
                         *line = format!("  vertex_project: \"{}\"", vertex_project);
                     }

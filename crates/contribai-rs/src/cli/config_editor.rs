@@ -33,6 +33,11 @@ pub const KNOWN_KEYS: &[KeyDef] = &[
         valid_values: None,
     },
     KeyDef {
+        key: "llm.base_url",
+        description: "Custom endpoint URL (for OpenAI/Anthropic-compatible APIs)",
+        valid_values: None,
+    },
+    KeyDef {
         key: "llm.vertex_project",
         description: "Vertex AI GCP project ID",
         valid_values: None,

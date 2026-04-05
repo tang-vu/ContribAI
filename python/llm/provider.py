@@ -232,7 +232,10 @@ class AnthropicProvider(LLMProvider):
         try:
             from anthropic import AsyncAnthropic
 
-            self._client = AsyncAnthropic(api_key=config.api_key)
+            kwargs = {"api_key": config.api_key}
+            if config.base_url:
+                kwargs["base_url"] = config.base_url
+            self._client = AsyncAnthropic(**kwargs)
         except ImportError as e:
             raise LLMError("anthropic package not installed") from e
 
