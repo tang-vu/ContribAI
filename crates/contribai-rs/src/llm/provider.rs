@@ -693,6 +693,7 @@ impl LlmProvider for OpenAIProvider {
 pub struct AnthropicProvider {
     client: Client,
     api_key: String,
+    base_url: String,
     model: String,
     temperature: f64,
     max_tokens: u32,
@@ -707,11 +708,17 @@ impl AnthropicProvider {
                 .map_err(|_| ContribError::Llm("ANTHROPIC_API_KEY not set".into()))?
         };
 
-        info!(model = %config.model, "Anthropic provider");
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+
+        info!(model = %config.model, base_url = %base_url, "Anthropic provider");
 
         Ok(Self {
             client: Client::new(),
             api_key,
+            base_url,
             model: config.model.clone(),
             temperature: config.temperature,
             max_tokens: config.max_tokens,
@@ -761,7 +768,7 @@ impl LlmProvider for AnthropicProvider {
 
         let response = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(self.base_url.to_string() + "/messages")
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
@@ -1007,6 +1014,54 @@ mod tests {
         };
         let result = create_llm_provider(&config);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_anthropic_with_key() {
+        let config = LlmConfig {
+            provider: "anthropic".into(),
+            api_key: "sk-ant-test123".into(),
+            model: "claude-sonnet-4-20250514".into(),
+            temperature: 0.3,
+            max_tokens: 4096,
+            base_url: None,
+            vertex_project: String::new(),
+            vertex_location: "global".into(),
+        };
+        let result = create_llm_provider(&config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_anthropic_default_base_url() {
+        let config = LlmConfig {
+            provider: "anthropic".into(),
+            api_key: "sk-ant-test123".into(),
+            model: "claude-sonnet-4-20250514".into(),
+            temperature: 0.3,
+            max_tokens: 4096,
+            base_url: None,
+            vertex_project: String::new(),
+            vertex_location: "global".into(),
+        };
+        let p = AnthropicProvider::new(&config).unwrap();
+        assert_eq!(p.base_url, "https://api.anthropic.com/v1");
+    }
+
+    #[test]
+    fn test_anthropic_custom_base_url() {
+        let config = LlmConfig {
+            provider: "anthropic".into(),
+            api_key: "sk-ant-test123".into(),
+            model: "claude-sonnet-4-20250514".into(),
+            temperature: 0.3,
+            max_tokens: 4096,
+            base_url: Some("https://my-proxy.example.com/v1".into()),
+            vertex_project: String::new(),
+            vertex_location: "global".into(),
+        };
+        let p = AnthropicProvider::new(&config).unwrap();
+        assert_eq!(p.base_url, "https://my-proxy.example.com/v1");
     }
 
     #[test]

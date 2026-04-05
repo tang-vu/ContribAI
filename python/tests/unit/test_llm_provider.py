@@ -94,3 +94,24 @@ class TestOllamaProvider:
         config = LLMConfig(provider="ollama", model="test-model")
         provider = OllamaProvider(config)
         await provider.close()  # Should not raise
+
+
+class TestAnthropicProvider:
+    def test_base_url_passed_to_client(self):
+        with patch("contribai.llm.provider.anthropic.AsyncAnthropic") as mock_cls:
+            config = LLMConfig(
+                provider="anthropic",
+                api_key="test-key",
+                base_url="https://my-proxy.example.com/v1",
+            )
+            AnthropicProvider(config)
+            mock_cls.assert_called_once_with(
+                api_key="test-key",
+                base_url="https://my-proxy.example.com/v1",
+            )
+
+    def test_base_url_omitted_when_not_set(self):
+        with patch("contribai.llm.provider.anthropic.AsyncAnthropic") as mock_cls:
+            config = LLMConfig(provider="anthropic", api_key="test-key")
+            AnthropicProvider(config)
+            mock_cls.assert_called_once_with(api_key="test-key")
