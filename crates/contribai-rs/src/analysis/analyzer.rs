@@ -258,7 +258,10 @@ impl<'a> CodeAnalyzer<'a> {
         parts.join("\n")
     }
 
-    /// Run a single analyzer using LLM.
+    /// Run a single analyzer using LLM with retry + exponential backoff.
+    ///
+    /// Retries up to 3 times on transient errors (timeout, 429, 5xx).
+    /// Does NOT retry on 400/401 (bad request, auth failure).
     async fn run_analyzer(&self, name: &str, context: &str) -> Result<Vec<Finding>> {
         let system_prompt = format!(
             "You are an expert {} code analyzer for open source contributions. \
@@ -274,14 +277,56 @@ impl<'a> CodeAnalyzer<'a> {
             name, context
         );
 
-        let response = self
-            .llm
-            .complete(&prompt, Some(&system_prompt), None, None)
-            .await?;
+        // Retry with exponential backoff: 2s → 4s → 8s (max 3 attempts)
+        let mut last_error = None;
+        let delays = [2u64, 4, 8];
 
-        // Parse findings from LLM response
-        let findings = self.parse_findings(&response, name);
-        Ok(findings)
+        for attempt in 0..=delays.len() {
+            match self
+                .llm
+                .complete(&prompt, Some(&system_prompt), None, None)
+                .await
+            {
+                Ok(response) => {
+                    if attempt > 0 {
+                        info!(
+                            analyzer = name,
+                            attempt = attempt + 1,
+                            "Analyzer succeeded after retry"
+                        );
+                    }
+                    // Parse findings from LLM response
+                    let findings = self.parse_findings(&response, name);
+                    return Ok(findings);
+                }
+                Err(e) => {
+                    let is_transient = is_transient_llm_error(&e);
+                    warn!(
+                        analyzer = name,
+                        attempt = attempt + 1,
+                        error = %e,
+                        transient = is_transient,
+                        "Analyzer attempt failed"
+                    );
+
+                    if !is_transient {
+                        // Non-transient error (auth, bad request) — don't retry
+                        return Err(e);
+                    }
+
+                    last_error = Some(e);
+
+                    if attempt < delays.len() {
+                        let delay = delays[attempt];
+                        info!(analyzer = name, delay_secs = delay, "Waiting before retry...");
+                        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted
+        Err(last_error.unwrap_or_else(|| crate::core::error::ContribError::Llm("Analyzer exhausted after retries".into())))
     }
 
     /// Parse LLM response into Finding objects.
@@ -344,6 +389,29 @@ impl<'a> CodeAnalyzer<'a> {
                 seen.insert(key)
             })
             .collect()
+    }
+}
+
+/// Check if an LLM error is transient (retryable).
+///
+/// Transient errors: timeout, 429 (rate limit), 5xx (server error), HTTP errors.
+/// Non-transient: 400 (bad request), 401 (auth failure), JSON parse errors.
+fn is_transient_llm_error(e: &crate::core::error::ContribError) -> bool {
+    match e {
+        crate::core::error::ContribError::Llm(msg) => {
+            // Check for known transient patterns
+            msg.contains("429")
+                || msg.contains("rate limit")
+                || msg.contains("timeout")
+                || msg.contains("500")
+                || msg.contains("502")
+                || msg.contains("503")
+                || msg.contains("504")
+                || msg.contains("HTTP error")
+                || msg.contains("response read")
+        }
+        crate::core::error::ContribError::Http(_) => true, // HTTP errors are transient
+        _ => false, // Config, JSON, DB errors are NOT transient
     }
 }
 
@@ -419,5 +487,49 @@ mod tests {
             .collect();
 
         assert_eq!(deduped.len(), 1);
+    }
+
+    // ── Transient error detection ─────────────────────────────────────────
+
+    #[test]
+    fn test_transient_error_timeout() {
+        let e = crate::core::error::ContribError::Llm("Gemini API error: timeout".into());
+        assert!(is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_transient_error_rate_limit() {
+        let e = crate::core::error::ContribError::Llm("Gemini rate limit: 429 Too Many Requests".into());
+        assert!(is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_transient_error_500() {
+        let e = crate::core::error::ContribError::Llm("Gemini API error 500: Internal Server Error".into());
+        assert!(is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_transient_error_http() {
+        let e = crate::core::error::ContribError::Llm("Gemini HTTP error: connection refused".into());
+        assert!(is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_non_transient_error_400() {
+        let e = crate::core::error::ContribError::Llm("Gemini API error 400: Bad request".into());
+        assert!(!is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_non_transient_error_auth() {
+        let e = crate::core::error::ContribError::Llm("GEMINI_API_KEY not set".into());
+        assert!(!is_transient_llm_error(&e));
+    }
+
+    #[test]
+    fn test_non_transient_json_parse() {
+        let e = crate::core::error::ContribError::Json(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, "test")));
+        assert!(!is_transient_llm_error(&e));
     }
 }

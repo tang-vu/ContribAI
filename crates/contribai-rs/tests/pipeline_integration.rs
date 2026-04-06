@@ -412,3 +412,66 @@ fn test_cross_file_import_resolution_end_to_end() {
         "Should resolve Config symbol"
     );
 }
+
+// ── Circuit Breaker Integration ─────────────────────────────────────────
+
+#[test]
+fn test_circuit_breaker_opens_after_consecutive_failures() {
+    use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
+
+    let cb = CircuitBreaker::new()
+        .with_thresholds(3, 1, 999); // 3 failures → open, long cooldown
+
+    // Simulate 3 consecutive LLM failures
+    cb.record_failure();
+    cb.record_failure();
+    assert_eq!(cb.state(), CircuitState::Closed);
+
+    cb.record_failure();
+    assert_eq!(cb.state(), CircuitState::Open);
+    // With long cooldown, allow_request should return false
+    assert!(!cb.allow_request());
+    assert_eq!(cb.state(), CircuitState::Open);
+}
+
+#[test]
+fn test_circuit_breaker_recovers_on_success() {
+    use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
+
+    let cb = CircuitBreaker::new()
+        .with_thresholds(1, 1, 0);
+
+    cb.record_failure(); // Opens
+    assert_eq!(cb.state(), CircuitState::Open);
+
+    cb.allow_request(); // → HalfOpen (cooldown = 0)
+    cb.record_success(); // → Closed
+    assert_eq!(cb.state(), CircuitState::Closed);
+    assert!(cb.allow_request());
+}
+
+#[test]
+fn test_circuit_breaker_resets_success_clears_counter() {
+    use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
+
+    let cb = CircuitBreaker::new().with_thresholds(5, 1, 999);
+
+    cb.record_failure();
+    cb.record_failure();
+    assert_eq!(cb.failure_count(), 2);
+
+    cb.record_success();
+    assert_eq!(cb.failure_count(), 0);
+    assert_eq!(cb.state(), CircuitState::Closed);
+}
+
+#[test]
+fn test_pipeline_config_circuit_breaker_defaults() {
+    use contribai::core::config::PipelineConfig;
+
+    let config = PipelineConfig::default();
+    assert_eq!(config.circuit_breaker_failure_threshold, 5);
+    assert_eq!(config.circuit_breaker_success_threshold, 2);
+    assert_eq!(config.circuit_breaker_cooldown_secs, 300);
+}
+

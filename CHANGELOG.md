@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.0] - 2026-04-06
+
+### Added
+- **Circuit Breaker for LLM failures**: Full circuit breaker pattern (Closed → Open → HalfOpen) stops pipeline after consecutive LLM failures to save API quota. Configurable thresholds via `pipeline.circuit_breaker_failure_threshold` (default: 5), `success_threshold` (default: 2), `cooldown_secs` (default: 300).
+- **`contribai circuit-breaker` CLI command**: Shows current circuit state, failure count, cooldown remaining, and recovery status.
+- **Analyzer retry with exponential backoff**: Analyzer LLM calls now retry up to 3 times (2s → 4s → 8s) on transient errors (429, 5xx, timeout). Non-transient errors (400, 401, auth) fail immediately without retry.
+- **18 E2E LLM parser tests**: Tests against real-world response shapes — markdown fences, explanations alongside JSON, malformed responses, trailing commas, multi-language findings, unicode, null values, and more. Documents known limitations (multiple arrays).
+- **16 circuit breaker tests**: Unit tests for all state transitions + integration tests with pipeline config defaults.
+- **8 transient error detection tests**: Tests for `is_transient_llm_error()` covering timeout, rate limit, 5xx, HTTP errors vs non-transient (400, auth, JSON parse).
+
+### Changed
+- Pipeline `run()` and `hunt()` now check circuit breaker before processing each repo — stops entire run if circuit is open.
+- Circuit breaker records success/failure after each repo processing attempt.
+- Test count: **418 → 469** (+51 new tests)
+
 ## [4.1.0] - 2026-03-29
 
 ### Added

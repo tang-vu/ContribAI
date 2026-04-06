@@ -57,4 +57,4 @@ contribai-v*
 tmp_*.md
 
 # Powershell
-_*.ps1
+# _*.ps1

@@ -246,6 +246,9 @@ enum Commands {
 
     /// Run environment diagnostics — check config, auth, LLM, and system health
     Doctor,
+
+    /// Check circuit breaker status — shows LLM failure state and cooldown
+    CircuitBreaker,
 }
 
 impl Cli {
@@ -1206,6 +1209,11 @@ impl Cli {
                 print_banner();
                 run_doctor(self.config.as_deref()).await
             }
+
+            Commands::CircuitBreaker => {
+                print_banner();
+                run_circuit_breaker_status(self.config.as_deref()).await
+            }
         }
     }
 }
@@ -1245,6 +1253,7 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
         "🔔  Notify test  — test notification channels",
         "💤  Dream        — consolidate memory into repo profiles",
         "🩺  Doctor       — check environment health",
+        "⚡  Circuit      — check LLM circuit breaker status",
         "⚙️   Config       — show current config",
         "🛠   Config set   — change a setting",
         "🔐  Login        — check auth status",
@@ -1327,8 +1336,9 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
         16 => Commands::NotifyTest,
         17 => Commands::Dream { force: false },
         18 => Commands::Doctor,
-        19 => Commands::Config,
-        20 => {
+        19 => Commands::CircuitBreaker,
+        20 => Commands::Config,
+        21 => {
             let key: String = dialoguer::Input::new()
                 .with_prompt("Config key (e.g. llm.provider)")
                 .interact_text()?;
@@ -1337,8 +1347,8 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
                 .interact_text()?;
             Commands::ConfigSet { key, value }
         }
-        21 => Commands::Login,
-        22 => Commands::Init { output: None },
+        22 => Commands::Login,
+        23 => Commands::Init { output: None },
         _ => std::process::exit(0),
     })
 }
@@ -1614,6 +1624,71 @@ async fn run_doctor(config_path: Option<&str>) -> anyhow::Result<()> {
             style(fail).red().bold()
         );
     }
+    println!();
+    Ok(())
+}
+
+// ── Circuit Breaker Status ─────────────────────────────────────────────────────
+
+/// Show circuit breaker status — whether LLM failures have tripped the circuit.
+async fn run_circuit_breaker_status(config_path: Option<&str>) -> anyhow::Result<()> {
+    use console::style;
+    use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
+
+    print_banner();
+
+    println!("{}", style("⚡ Circuit Breaker Status").cyan().bold());
+    println!("{}", "━".repeat(50).dimmed());
+    println!();
+
+    let config = load_config(config_path).unwrap_or_default();
+    let cb = CircuitBreaker::new()
+        .with_thresholds(
+            config.pipeline.circuit_breaker_failure_threshold,
+            config.pipeline.circuit_breaker_success_threshold,
+            config.pipeline.circuit_breaker_cooldown_secs,
+        );
+
+    println!(
+        "  {:<25} {:?}",
+        style("State:").bold(),
+        cb.state()
+    );
+    println!(
+        "  {:<25} {}",
+        style("Summary:").bold(),
+        cb.summary()
+    );
+    println!(
+        "  {:<25} {}",
+        style("Failure threshold:").bold(),
+        config.pipeline.circuit_breaker_failure_threshold
+    );
+    println!(
+        "  {:<25} {}",
+        style("Success threshold:").bold(),
+        config.pipeline.circuit_breaker_success_threshold
+    );
+    println!(
+        "  {:<25} {}s",
+        style("Cooldown:").bold(),
+        config.pipeline.circuit_breaker_cooldown_secs
+    );
+    println!();
+
+    match cb.state() {
+        CircuitState::Closed => {
+            println!("  {} Circuit is CLOSED — LLM calls proceeding normally", style("✅").green());
+        }
+        CircuitState::Open => {
+            println!("  {} Circuit is OPEN — LLM calls are blocked to save API quota", style("🔴").red().bold());
+            println!("  {} Wait for cooldown period or manually reset with `contribai run` (success will reset)", style("💡").bold());
+        }
+        CircuitState::HalfOpen => {
+            println!("  {} Circuit is HALF-OPEN — testing recovery with next LLM call", style("🟡").yellow());
+        }
+    }
+
     println!();
     Ok(())
 }

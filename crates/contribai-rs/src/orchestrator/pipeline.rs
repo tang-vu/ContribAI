@@ -27,6 +27,7 @@ use crate::github::guidelines::fetch_repo_guidelines;
 use crate::llm::models::TaskType;
 use crate::llm::provider::LlmProvider;
 use crate::llm::router::{CostStrategy, TaskRouter};
+use crate::orchestrator::circuit_breaker::CircuitBreaker;
 use crate::orchestrator::memory::Memory;
 use crate::pr::manager::PrManager;
 
@@ -97,6 +98,8 @@ pub struct ContribPipeline<'a> {
     scorer: QualityScorer,
     middleware_chain: MiddlewareChain,
     router: std::sync::Mutex<TaskRouter>,
+    /// Circuit breaker for LLM failures — stops pipeline after too many failures.
+    circuit_breaker: CircuitBreaker,
     /// Allow HIGH risk changes to auto-submit (set via --approve flag).
     approve_high_risk: bool,
 }
@@ -200,8 +203,16 @@ impl<'a> ContribPipeline<'a> {
         info!(
             middlewares = 5,
             strategy = ?strategy,
-            "Pipeline initialized: middleware chain + task router"
+            cb_threshold = config.pipeline.circuit_breaker_failure_threshold,
+            "Pipeline initialized: middleware chain + task router + circuit breaker"
         );
+
+        let circuit_breaker = CircuitBreaker::new()
+            .with_thresholds(
+                config.pipeline.circuit_breaker_failure_threshold,
+                config.pipeline.circuit_breaker_success_threshold,
+                config.pipeline.circuit_breaker_cooldown_secs,
+            );
 
         Self {
             config,
@@ -212,6 +223,7 @@ impl<'a> ContribPipeline<'a> {
             scorer: QualityScorer::new(min_quality),
             middleware_chain,
             router: std::sync::Mutex::new(router),
+            circuit_breaker,
             approve_high_risk: false,
         }
     }
@@ -231,6 +243,25 @@ impl<'a> ContribPipeline<'a> {
     /// Set whether HIGH risk changes should be auto-submitted.
     pub fn set_approve_high_risk(&mut self, approve: bool) {
         self.approve_high_risk = approve;
+    }
+
+    /// Get the current circuit breaker state summary.
+    pub fn circuit_breaker_summary(&self) -> String {
+        self.circuit_breaker.summary()
+    }
+
+    /// Check if the circuit breaker is open. Returns true if requests should proceed.
+    fn check_circuit(&self) -> bool {
+        if !self.circuit_breaker.allow_request() {
+            warn!(
+                circuit_state = ?self.circuit_breaker.state(),
+                failures = self.circuit_breaker.failure_count(),
+                "🔴 Circuit breaker OPEN — failing fast to save API quota"
+            );
+            false
+        } else {
+            true
+        }
     }
 
     /// Get model name for a given task type via the router.
@@ -360,6 +391,13 @@ impl<'a> ContribPipeline<'a> {
 
         // 2. Process each repo through middleware chain first
         for repo in &repos {
+            // ── Circuit breaker check ───────────────────────────────────
+            if !self.check_circuit() {
+                warn!("Circuit breaker open — stopping pipeline to save API quota");
+                result.errors.push("Circuit breaker open: too many consecutive LLM failures".to_string());
+                break;
+            }
+
             // Skip repos analyzed within the last 7 days
             if self.memory.has_analyzed_since(&repo.full_name, 7)? {
                 info!(repo = %repo.full_name, "Skipping (analyzed within 7 days)");
@@ -411,12 +449,20 @@ impl<'a> ContribPipeline<'a> {
                     result.findings_total += repo_result.findings_total;
                     result.contributions_generated += repo_result.contributions_generated;
                     result.prs_created += repo_result.prs_created;
-                    result.errors.extend(repo_result.errors);
+                    result.errors.extend(repo_result.errors.clone());
+                    
+                    // Record circuit breaker success/failure
+                    if repo_result.errors.is_empty() {
+                        self.circuit_breaker.record_success();
+                    } else {
+                        self.circuit_breaker.record_failure();
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error processing {}: {}", repo.full_name, e);
                     warn!("{}", msg);
                     result.errors.push(msg);
+                    self.circuit_breaker.record_failure();
                 }
             }
         }
@@ -474,6 +520,13 @@ impl<'a> ContribPipeline<'a> {
         info!(rounds, delay_sec, mode, "🔥 Hunt mode started");
 
         for rnd in 1..=rounds {
+            // ── Circuit breaker check ───────────────────────────────────
+            if !self.check_circuit() {
+                warn!("Circuit breaker open — stopping hunt to save API quota");
+                total.errors.push("Circuit breaker open: too many consecutive LLM failures".to_string());
+                break;
+            }
+
             // Check daily limit
             let today_prs = self.memory.get_today_pr_count()?;
             let remaining = (self.config.github.max_prs_per_day as usize).saturating_sub(today_prs);
@@ -703,9 +756,18 @@ impl<'a> ContribPipeline<'a> {
                     rr.findings_total += r.findings_total;
                     rr.contributions_generated += r.contributions_generated;
                     rr.prs_created += r.prs_created;
-                    rr.errors.extend(r.errors);
+                    rr.errors.extend(r.errors.clone());
+                    // Record circuit breaker
+                    if r.errors.is_empty() {
+                        self.circuit_breaker.record_success();
+                    } else {
+                        self.circuit_breaker.record_failure();
+                    }
                 }
-                Err(e) => rr.errors.push(format!("{}: {}", repo.full_name, e)),
+                Err(e) => {
+                    rr.errors.push(format!("{}: {}", repo.full_name, e));
+                    self.circuit_breaker.record_failure();
+                }
             }
         }
 
