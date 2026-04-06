@@ -318,7 +318,11 @@ impl<'a> CodeAnalyzer<'a> {
 
                     if attempt < delays.len() {
                         let delay = delays[attempt];
-                        info!(analyzer = name, delay_secs = delay, "Waiting before retry...");
+                        info!(
+                            analyzer = name,
+                            delay_secs = delay,
+                            "Waiting before retry..."
+                        );
                         tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                     }
                 }
@@ -326,7 +330,9 @@ impl<'a> CodeAnalyzer<'a> {
         }
 
         // All retries exhausted
-        Err(last_error.unwrap_or_else(|| crate::core::error::ContribError::Llm("Analyzer exhausted after retries".into())))
+        Err(last_error.unwrap_or_else(|| {
+            crate::core::error::ContribError::Llm("Analyzer exhausted after retries".into())
+        }))
     }
 
     /// Parse LLM response into Finding objects.
@@ -499,19 +505,24 @@ mod tests {
 
     #[test]
     fn test_transient_error_rate_limit() {
-        let e = crate::core::error::ContribError::Llm("Gemini rate limit: 429 Too Many Requests".into());
+        let e = crate::core::error::ContribError::Llm(
+            "Gemini rate limit: 429 Too Many Requests".into(),
+        );
         assert!(is_transient_llm_error(&e));
     }
 
     #[test]
     fn test_transient_error_500() {
-        let e = crate::core::error::ContribError::Llm("Gemini API error 500: Internal Server Error".into());
+        let e = crate::core::error::ContribError::Llm(
+            "Gemini API error 500: Internal Server Error".into(),
+        );
         assert!(is_transient_llm_error(&e));
     }
 
     #[test]
     fn test_transient_error_http() {
-        let e = crate::core::error::ContribError::Llm("Gemini HTTP error: connection refused".into());
+        let e =
+            crate::core::error::ContribError::Llm("Gemini HTTP error: connection refused".into());
         assert!(is_transient_llm_error(&e));
     }
 
@@ -529,7 +540,10 @@ mod tests {
 
     #[test]
     fn test_non_transient_json_parse() {
-        let e = crate::core::error::ContribError::Json(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, "test")));
+        let e = crate::core::error::ContribError::Json(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "test",
+        )));
         assert!(!is_transient_llm_error(&e));
     }
 }

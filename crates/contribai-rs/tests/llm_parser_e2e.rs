@@ -233,7 +233,10 @@ Also check:
         // The current parser will fail to parse this as valid JSON
         // because it grabs everything between first '[' and last ']'
         // which includes text and two separate arrays
-        assert!(findings.is_empty(), "Known bug: multiple arrays not handled");
+        assert!(
+            findings.is_empty(),
+            "Known bug: multiple arrays not handled"
+        );
     }
 
     // ── Test 8: JSON with code example containing brackets in description ──

@@ -419,8 +419,7 @@ fn test_cross_file_import_resolution_end_to_end() {
 fn test_circuit_breaker_opens_after_consecutive_failures() {
     use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
 
-    let cb = CircuitBreaker::new()
-        .with_thresholds(3, 1, 999); // 3 failures → open, long cooldown
+    let cb = CircuitBreaker::new().with_thresholds(3, 1, 999); // 3 failures → open, long cooldown
 
     // Simulate 3 consecutive LLM failures
     cb.record_failure();
@@ -438,8 +437,7 @@ fn test_circuit_breaker_opens_after_consecutive_failures() {
 fn test_circuit_breaker_recovers_on_success() {
     use contribai::orchestrator::circuit_breaker::{CircuitBreaker, CircuitState};
 
-    let cb = CircuitBreaker::new()
-        .with_thresholds(1, 1, 0);
+    let cb = CircuitBreaker::new().with_thresholds(1, 1, 0);
 
     cb.record_failure(); // Opens
     assert_eq!(cb.state(), CircuitState::Open);
@@ -474,4 +472,3 @@ fn test_pipeline_config_circuit_breaker_defaults() {
     assert_eq!(config.circuit_breaker_success_threshold, 2);
     assert_eq!(config.circuit_breaker_cooldown_secs, 300);
 }
-

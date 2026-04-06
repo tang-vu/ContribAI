@@ -58,7 +58,12 @@ impl CircuitBreaker {
     }
 
     /// Create with custom thresholds.
-    pub fn with_thresholds(mut self, failure_threshold: u32, success_threshold: u32, cooldown_secs: u64) -> Self {
+    pub fn with_thresholds(
+        mut self,
+        failure_threshold: u32,
+        success_threshold: u32,
+        cooldown_secs: u64,
+    ) -> Self {
         self.failure_threshold = failure_threshold;
         self.success_threshold = success_threshold;
         self.cooldown = Duration::from_secs(cooldown_secs);
@@ -99,7 +104,9 @@ impl CircuitBreaker {
                     let cooldown_elapsed = now_secs.saturating_sub(opened_at);
                     if cooldown_elapsed >= self.cooldown.as_secs() {
                         // Transition to HalfOpen
-                        let prev = self.state.swap(CircuitState::HalfOpen as u32, Ordering::Relaxed);
+                        let prev = self
+                            .state
+                            .swap(CircuitState::HalfOpen as u32, Ordering::Relaxed);
                         if prev == CircuitState::Open as u32 {
                             info!(
                                 cooldown_secs = cooldown_elapsed,
@@ -124,7 +131,8 @@ impl CircuitBreaker {
         if self.state() == CircuitState::HalfOpen {
             let successes = self.successes.fetch_add(1, Ordering::Relaxed) + 1;
             if successes >= self.success_threshold {
-                self.state.store(CircuitState::Closed as u32, Ordering::Relaxed);
+                self.state
+                    .store(CircuitState::Closed as u32, Ordering::Relaxed);
                 self.successes.store(0, Ordering::Relaxed);
                 info!("✅ Circuit breaker: HalfOpen → Closed (recovered)");
             }
@@ -145,7 +153,8 @@ impl CircuitBreaker {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs();
-                    self.state.store(CircuitState::Open as u32, Ordering::Relaxed);
+                    self.state
+                        .store(CircuitState::Open as u32, Ordering::Relaxed);
                     self.opened_at.store(now, Ordering::Relaxed);
                     warn!(
                         failures,
@@ -159,7 +168,8 @@ impl CircuitBreaker {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
-                self.state.store(CircuitState::Open as u32, Ordering::Relaxed);
+                self.state
+                    .store(CircuitState::Open as u32, Ordering::Relaxed);
                 self.opened_at.store(now, Ordering::Relaxed);
                 self.successes.store(0, Ordering::Relaxed);
                 warn!("🔴 Circuit breaker: HalfOpen → Open (test request failed)");
@@ -172,7 +182,8 @@ impl CircuitBreaker {
 
     /// Manually reset the circuit breaker to Closed state.
     pub fn reset(&self) {
-        self.state.store(CircuitState::Closed as u32, Ordering::Relaxed);
+        self.state
+            .store(CircuitState::Closed as u32, Ordering::Relaxed);
         self.failures.store(0, Ordering::Relaxed);
         self.successes.store(0, Ordering::Relaxed);
         self.opened_at.store(0, Ordering::Relaxed);
@@ -184,17 +195,29 @@ impl CircuitBreaker {
         let state = self.state();
         let failures = self.failure_count();
         match state {
-            CircuitState::Closed => format!("CLOSED (failures: {}/{})", failures, self.failure_threshold),
+            CircuitState::Closed => {
+                format!("CLOSED (failures: {}/{})", failures, self.failure_threshold)
+            }
             CircuitState::Open => {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 let opened_at = self.opened_at.load(Ordering::Relaxed);
-                let remaining = self.cooldown.as_secs().saturating_sub(now.saturating_sub(opened_at));
-                format!("OPEN (failures: {}, cooldown remaining: {}s)", failures, remaining)
+                let remaining = self
+                    .cooldown
+                    .as_secs()
+                    .saturating_sub(now.saturating_sub(opened_at));
+                format!(
+                    "OPEN (failures: {}, cooldown remaining: {}s)",
+                    failures, remaining
+                )
             }
-            CircuitState::HalfOpen => format!("HALF-OPEN (successes: {}/{})", self.successes.load(Ordering::Relaxed), self.success_threshold),
+            CircuitState::HalfOpen => format!(
+                "HALF-OPEN (successes: {}/{})",
+                self.successes.load(Ordering::Relaxed),
+                self.success_threshold
+            ),
         }
     }
 }
@@ -226,8 +249,7 @@ mod tests {
 
     #[test]
     fn test_opens_after_threshold() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(3, 1, 1); // 3 failures → open, 1 success → close, 1s cooldown
+        let cb = CircuitBreaker::new().with_thresholds(3, 1, 1); // 3 failures → open, 1 success → close, 1s cooldown
 
         for _ in 0..2 {
             cb.record_failure();
@@ -243,8 +265,7 @@ mod tests {
 
     #[test]
     fn test_open_blocks_requests() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(2, 1, 999); // Very long cooldown
+        let cb = CircuitBreaker::new().with_thresholds(2, 1, 999); // Very long cooldown
 
         cb.record_failure();
         cb.record_failure();
@@ -256,8 +277,7 @@ mod tests {
     #[test]
     fn test_half_open_after_cooldown() {
         // Use 0-second cooldown to trigger HalfOpen immediately
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 1, 0);
+        let cb = CircuitBreaker::new().with_thresholds(1, 1, 0);
 
         cb.record_failure(); // Opens immediately
         assert_eq!(cb.state(), CircuitState::Open);
@@ -269,8 +289,7 @@ mod tests {
 
     #[test]
     fn test_half_open_success_closes() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 2, 0); // 1 failure → open, 2 successes → close
+        let cb = CircuitBreaker::new().with_thresholds(1, 2, 0); // 1 failure → open, 2 successes → close
 
         cb.record_failure(); // Opens
         assert!(cb.allow_request()); // → HalfOpen
@@ -285,12 +304,12 @@ mod tests {
 
     #[test]
     fn test_half_open_failure_reopens() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 1, 999);
+        let cb = CircuitBreaker::new().with_thresholds(1, 1, 999);
 
         cb.record_failure(); // Opens
-        // Force to HalfOpen by setting state directly (cooldown too long)
-        cb.state.store(CircuitState::HalfOpen as u32, Ordering::Relaxed);
+                             // Force to HalfOpen by setting state directly (cooldown too long)
+        cb.state
+            .store(CircuitState::HalfOpen as u32, Ordering::Relaxed);
 
         cb.record_failure(); // Test request fails
         assert_eq!(cb.state(), CircuitState::Open);
@@ -298,8 +317,7 @@ mod tests {
 
     #[test]
     fn test_reset_clears_state() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 1, 999);
+        let cb = CircuitBreaker::new().with_thresholds(1, 1, 999);
 
         cb.record_failure();
         cb.reset();
@@ -318,8 +336,7 @@ mod tests {
 
     #[test]
     fn test_summary_open() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 1, 999);
+        let cb = CircuitBreaker::new().with_thresholds(1, 1, 999);
         cb.record_failure();
         let summary = cb.summary();
         assert!(summary.contains("OPEN"));
@@ -327,8 +344,7 @@ mod tests {
 
     #[test]
     fn test_summary_half_open() {
-        let cb = CircuitBreaker::new()
-            .with_thresholds(1, 2, 0);
+        let cb = CircuitBreaker::new().with_thresholds(1, 2, 0);
         cb.record_failure();
         cb.allow_request(); // → HalfOpen
         let summary = cb.summary();

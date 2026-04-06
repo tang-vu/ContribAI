@@ -207,12 +207,11 @@ impl<'a> ContribPipeline<'a> {
             "Pipeline initialized: middleware chain + task router + circuit breaker"
         );
 
-        let circuit_breaker = CircuitBreaker::new()
-            .with_thresholds(
-                config.pipeline.circuit_breaker_failure_threshold,
-                config.pipeline.circuit_breaker_success_threshold,
-                config.pipeline.circuit_breaker_cooldown_secs,
-            );
+        let circuit_breaker = CircuitBreaker::new().with_thresholds(
+            config.pipeline.circuit_breaker_failure_threshold,
+            config.pipeline.circuit_breaker_success_threshold,
+            config.pipeline.circuit_breaker_cooldown_secs,
+        );
 
         Self {
             config,
@@ -394,7 +393,9 @@ impl<'a> ContribPipeline<'a> {
             // ── Circuit breaker check ───────────────────────────────────
             if !self.check_circuit() {
                 warn!("Circuit breaker open — stopping pipeline to save API quota");
-                result.errors.push("Circuit breaker open: too many consecutive LLM failures".to_string());
+                result
+                    .errors
+                    .push("Circuit breaker open: too many consecutive LLM failures".to_string());
                 break;
             }
 
@@ -450,7 +451,7 @@ impl<'a> ContribPipeline<'a> {
                     result.contributions_generated += repo_result.contributions_generated;
                     result.prs_created += repo_result.prs_created;
                     result.errors.extend(repo_result.errors.clone());
-                    
+
                     // Record circuit breaker success/failure
                     if repo_result.errors.is_empty() {
                         self.circuit_breaker.record_success();
@@ -523,7 +524,9 @@ impl<'a> ContribPipeline<'a> {
             // ── Circuit breaker check ───────────────────────────────────
             if !self.check_circuit() {
                 warn!("Circuit breaker open — stopping hunt to save API quota");
-                total.errors.push("Circuit breaker open: too many consecutive LLM failures".to_string());
+                total
+                    .errors
+                    .push("Circuit breaker open: too many consecutive LLM failures".to_string());
                 break;
             }
 
