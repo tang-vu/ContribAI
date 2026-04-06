@@ -14,6 +14,7 @@ llm:
   api_key: ""  # Auto: $GEMINI_API_KEY / $OPENAI_API_KEY / $ANTHROPIC_API_KEY
   temperature: 0.3
   max_tokens: 8192
+  # base_url: ""  # Override default API endpoint (e.g. "https://api.openai.com/v1")
   vertex_project: ""  # Auto: $GOOGLE_CLOUD_PROJECT
   vertex_location: "global"
 

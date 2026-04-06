@@ -4,7 +4,9 @@
 //! Built with ratatui + crossterm. Modeled after Python `contribai interactive`.
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -101,6 +103,48 @@ impl App {
 
         Self {
             tab: Tab::Dashboard,
+            pr_state,
+            repo_state,
+            action_state,
+            prs,
+            repos,
+            stats,
+            status_bar: "Press ? for help | Tab/1-4 switch panels | j/k navigate | q quit".into(),
+            show_help: false,
+            quit: false,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_test() -> Self {
+        let prs = vec![
+            PrRow {
+                number: "1".into(),
+                repo: "repo1".into(),
+                title: "Title 1".into(),
+                status: "open".into(),
+                kind: "feature".into(),
+            },
+            PrRow {
+                number: "2".into(),
+                repo: "repo2".into(),
+                title: "Title 2".into(),
+                status: "merged".into(),
+                kind: "fix".into(),
+            },
+        ];
+        let repos = vec!["repo1".into(), "repo2".into()];
+        let stats = Stats::default();
+
+        let mut pr_state = TableState::default();
+        pr_state.select(Some(0));
+        let mut repo_state = ListState::default();
+        repo_state.select(Some(0));
+        let mut action_state = ListState::default();
+        action_state.select(Some(0));
+
+        Self {
+            tab: Tab::PRs,
             pr_state,
             repo_state,
             action_state,
@@ -264,7 +308,9 @@ fn run_loop<B: ratatui::backend::Backend>(
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                app.handle_key(key.code, key.modifiers);
+                if key.kind == KeyEventKind::Press {
+                    app.handle_key(key.code, key.modifiers);
+                }
             }
         }
 
@@ -836,5 +882,124 @@ fn pr_style_icon(status: &str) -> (Style, &'static str) {
         "closed" => (Style::default().fg(Color::Red), "❌"),
         "open" => (Style::default().fg(Color::Yellow), "🟡"),
         _ => (Style::default().fg(Color::DarkGray), "⚪"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    use super::*;
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn release(code: KeyCode) -> KeyEvent {
+        KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Release)
+    }
+
+    /// Simulates the real event loop: only Press events should advance.
+    fn simulate_event_loop(app: &mut App, events: &[KeyEvent]) {
+        for ev in events {
+            if ev.kind == KeyEventKind::Press {
+                app.handle_key(ev.code, ev.modifiers);
+            }
+        }
+    }
+
+    #[test]
+    fn down_moves_one_step_per_press() {
+        let mut app = App::new_test();
+        assert_eq!(app.pr_state.selected(), Some(0));
+
+        let events = vec![
+            press(KeyCode::Down),
+            release(KeyCode::Down),
+            press(KeyCode::Down),
+            release(KeyCode::Down),
+        ];
+        simulate_event_loop(&mut app, &events);
+
+        // Two presses → index 1 (clamped at last item with 2 PRs)
+        assert_eq!(app.pr_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn up_moves_one_step_per_press() {
+        let mut app = App::new_test();
+        // Move to index 1 first
+        simulate_event_loop(&mut app, &[press(KeyCode::Down)]);
+        assert_eq!(app.pr_state.selected(), Some(1));
+
+        let events = vec![
+            press(KeyCode::Up),
+            release(KeyCode::Up),
+            press(KeyCode::Up),
+            release(KeyCode::Up),
+        ];
+        simulate_event_loop(&mut app, &events);
+
+        // Two presses up → clamped at 0
+        assert_eq!(app.pr_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn odd_indices_reachable_with_press_release_pairs() {
+        let mut app = App::new_test();
+
+        // Simulate 10 real keypresses, each producing press + release
+        let events: Vec<KeyEvent> = (0..10)
+            .flat_map(|_| [press(KeyCode::Down), release(KeyCode::Down)])
+            .collect();
+        simulate_event_loop(&mut app, &events);
+
+        // 10 presses, clamped at last index (1)
+        assert_eq!(app.pr_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn old_bug_double_counting_without_filter() {
+        // Demonstrate the old bug: without filtering by kind,
+        // press+release pairs cause double movement.
+        let mut app = App::new_test();
+        let events = vec![press(KeyCode::Down), release(KeyCode::Down)];
+        // OLD behavior: handle every event (no kind check)
+        for ev in &events {
+            app.handle_key(ev.code, ev.modifiers);
+        }
+        // Without filtering, both events advance → index would be 0+2 = 2, but clamped at 1
+        // This shows the old code moved by 2 per real keypress instead of 1.
+        assert_eq!(
+            app.pr_state.selected(),
+            Some(1),
+            "unfiltered: two events for one keypress"
+        );
+    }
+
+    #[test]
+    fn repos_list_navigates_correctly() {
+        let mut app = App::new_test();
+        app.tab = Tab::Repos;
+        assert_eq!(app.repo_state.selected(), Some(0));
+
+        simulate_event_loop(&mut app, &[press(KeyCode::Down), release(KeyCode::Down)]);
+        assert_eq!(app.repo_state.selected(), Some(1));
+
+        simulate_event_loop(&mut app, &[press(KeyCode::Up), release(KeyCode::Up)]);
+        assert_eq!(app.repo_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn actions_list_navigates_correctly() {
+        let mut app = App::new_test();
+        app.tab = Tab::Actions;
+        assert_eq!(app.action_state.selected(), Some(0));
+
+        simulate_event_loop(&mut app, &[press(KeyCode::Down), release(KeyCode::Down)]);
+        assert_eq!(app.action_state.selected(), Some(1));
+
+        simulate_event_loop(&mut app, &[press(KeyCode::Up), release(KeyCode::Up)]);
+        assert_eq!(app.action_state.selected(), Some(0));
     }
 }

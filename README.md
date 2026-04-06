@@ -114,6 +114,7 @@ llm:
   provider: "gemini"            # gemini | openai | anthropic | ollama | vertex
   model: "gemini-3-flash-preview"
   api_key: "your_api_key"       # or set GEMINI_API_KEY env var
+  # base_url: "https://api.openai.com/v1"  # Optional: override default endpoint for OpenAI-compatible providers
 
 discovery:
   languages:                    # default: all 15 languages

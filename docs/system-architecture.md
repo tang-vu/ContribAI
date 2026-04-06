@@ -377,6 +377,7 @@ llm:
   provider: "gemini"           # gemini | openai | anthropic | ollama
   model: "gemini-3-flash-preview"
   api_key: "..."
+  # base_url: "https://..."    # Optional: override default API endpoint for compatible providers
   temperature: 0.5
   max_tokens: 2000
 

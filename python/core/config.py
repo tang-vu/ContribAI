@@ -49,7 +49,7 @@ class LLMConfig(BaseModel):
     model: str = "gemini-2.5-flash"
     api_key: str = ""
     temperature: float = 0.3
-    max_tokens: int = 8192
+    max_tokens: int = 65536
     base_url: str | None = None  # for ollama or custom endpoints
     # Vertex AI (Google Cloud)
     vertex_project: str = ""

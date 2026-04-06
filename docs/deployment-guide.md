@@ -152,6 +152,7 @@ llm:
   provider: "gemini"                  # gemini | openai | anthropic | ollama
   model: "gemini-3-flash-preview"     # Model ID (v5.4.0+)
   api_key: "your_api_key"             # API key for provider
+  # base_url: "https://api.openai.com/v1"  # Optional: override default API endpoint for OpenAI/Anthropic-compatible providers (e.g. proxies, local gateways)
   temperature: 0.5                    # Creativity (0.0-2.0)
   max_tokens: 2000                    # Max response length
   timeout_seconds: 60                 # Request timeout
@@ -215,6 +216,7 @@ export CONTRIBAI_GITHUB_TOKEN="ghp_..."
 export CONTRIBAI_LLM_PROVIDER="gemini"
 export CONTRIBAI_LLM_API_KEY="your_api_key"
 export CONTRIBAI_LLM_MODEL="gemini-3-flash-preview"
+export CONTRIBAI_LLM_BASE_URL="https://api.openai.com/v1"  # Optional: override default endpoint
 export GITHUB_WEBHOOK_SECRET="your-webhook-secret"
 export CONTRIBAI_WEB_PORT="8787"
 ```
@@ -249,6 +251,7 @@ contribai profile gentle             # Code quality only, low PR limit
 |----------|-------------|---------|
 | `CONTRIBAI_LLM_PROVIDER` | LLM provider | `gemini` |
 | `CONTRIBAI_LLM_MODEL` | Model ID | `gemini-2.5-flash` |
+| `CONTRIBAI_LLM_BASE_URL` | Override default API endpoint | (provider default) |
 | `GITHUB_WEBHOOK_SECRET` | Webhook HMAC secret | (none) |
 | `CONTRIBAI_HOME` | Data directory | `~/.contribai` |
 | `CONTRIBAI_LOG_LEVEL` | Log level | `INFO` |
@@ -352,6 +355,7 @@ contribai notify-test                 # Test Slack/Discord/Telegram (real HTTP)
 contribai config-list                 # Show all config
 contribai config-get llm.provider     # Get single value
 contribai config-set llm.provider openai # Set value
+contribai config-set llm.base_url "https://your-proxy.example.com/v1"  # Set custom endpoint
 contribai profile security-focused    # Named profile
 ```
 

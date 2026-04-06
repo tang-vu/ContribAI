@@ -13,6 +13,8 @@ llm:
   api_key: "your_api_key_here"
   temperature: 0.3
   max_tokens: 8192
+  # Override default API endpoint (optional):
+  # base_url: "https://api.openai.com/v1"  # for OpenAI-compatible providers
   # For ollama (local models):
   # provider: "ollama"
   # model: "codellama:13b"

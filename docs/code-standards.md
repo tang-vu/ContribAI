@@ -505,6 +505,15 @@ pub struct GitHubConfig {
     pub max_prs_per_day: usize,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmConfig {
+    pub provider: String,
+    pub model: String,
+    pub api_key: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
 fn default_max_prs() -> usize { 15 }
 ```
 
