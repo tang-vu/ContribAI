@@ -1,6 +1,6 @@
 [package]
 name = "contribai"
-version = "5.14.0"
+version = "5.15.0"
 edition = "2021"
 authors = ["tang-vu <tang.vu@contribai.dev>"]
 description = "AI agent that autonomously contributes to open source projects on GitHub"
@@ -77,6 +77,7 @@ fd-lock = "4.0"
 axum = { version = "0.7", features = ["json", "query"], optional = true }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
 
 # HMAC-SHA256 for webhook signature verification
 hmac = "0.12"
@@ -97,7 +98,7 @@ crossterm = { version = "0.28", features = ["event-stream"], optional = true }
 
 [features]
 default = ["web", "tui"]
-web = ["dep:axum", "dep:tower", "dep:tower-http"]
+web = ["dep:axum", "dep:tower", "dep:tower-http", "dep:axum-server"]
 tui = ["dep:ratatui", "dep:crossterm"]
 
 [dev-dependencies]

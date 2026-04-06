@@ -17,6 +17,14 @@ pub struct WebConfig {
     pub api_keys: Vec<String>,
     /// Shared secret for verifying GitHub webhook HMAC-SHA256 signatures.
     pub webhook_secret: Option<String>,
+    /// ── TLS Configuration ──
+    /// Enable TLS (HTTPS). Requires cert_path and key_path.
+    #[serde(default)]
+    pub tls_enabled: bool,
+    /// Path to TLS certificate file (PEM format).
+    pub tls_cert_path: Option<String>,
+    /// Path to TLS private key file (PEM format).
+    pub tls_key_path: Option<String>,
 }
 
 impl Default for WebConfig {
@@ -24,6 +32,9 @@ impl Default for WebConfig {
         Self {
             api_keys: vec![],
             webhook_secret: std::env::var("GITHUB_WEBHOOK_SECRET").ok(),
+            tls_enabled: false,
+            tls_cert_path: None,
+            tls_key_path: None,
         }
     }
 }

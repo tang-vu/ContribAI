@@ -413,18 +413,57 @@ pub async fn run_server(
 
     let router = build_router(state);
     let addr = format!("{}:{}", host, port);
-    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
-        crate::core::error::ContribError::Config(format!("Cannot bind to {}: {}", addr, e))
-    })?;
 
-    info!(address = %addr, "Web dashboard running");
-    println!("  Dashboard: http://{}", addr);
+    // Check if TLS is enabled
+    if config.web.tls_enabled {
+        let cert_path = config.web.tls_cert_path.as_deref().ok_or_else(|| {
+            crate::core::error::ContribError::Config("TLS enabled but tls_cert_path not set".into())
+        })?;
+        let key_path = config.web.tls_key_path.as_deref().ok_or_else(|| {
+            crate::core::error::ContribError::Config("TLS enabled but tls_key_path not set".into())
+        })?;
 
-    axum::serve(listener, router)
-        .await
-        .map_err(|e| crate::core::error::ContribError::Config(format!("Server error: {}", e)))?;
+        info!(address = %addr, cert = %cert_path, key = %key_path, "Web dashboard running (TLS)");
+        println!("  Dashboard: https://{}", addr);
+
+        // Load TLS config
+        let tls_config = load_tls_config(cert_path, key_path).await.map_err(|e| {
+            crate::core::error::ContribError::Config(format!("TLS config error: {}", e))
+        })?;
+
+        let addr: std::net::SocketAddr = addr.parse().map_err(|e| {
+            crate::core::error::ContribError::Config(format!("Invalid address {}: {}", addr, e))
+        })?;
+
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(router.into_make_service())
+            .await
+            .map_err(|e| {
+                crate::core::error::ContribError::Config(format!("Server error: {}", e))
+            })?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
+            crate::core::error::ContribError::Config(format!("Cannot bind to {}: {}", addr, e))
+        })?;
+
+        info!(address = %addr, "Web dashboard running (HTTP)");
+        println!("  Dashboard: http://{}", addr);
+
+        axum::serve(listener, router).await.map_err(|e| {
+            crate::core::error::ContribError::Config(format!("Server error: {}", e))
+        })?;
+    }
 
     Ok(())
+}
+
+/// Load TLS configuration from cert and key files.
+#[cfg(feature = "web")]
+async fn load_tls_config(
+    cert_path: &str,
+    key_path: &str,
+) -> std::io::Result<axum_server::tls_rustls::RustlsConfig> {
+    axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await
 }
 
 // ── Dashboard HTML ────────────────────────────────────────────────────────────

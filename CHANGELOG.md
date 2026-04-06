@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-04-06
+
+### Added
+- **Web Dashboard TLS Support** — Enable HTTPS via config:
+  ```yaml
+  web:
+    tls_enabled: true
+    tls_cert_path: "/path/to/cert.pem"
+    tls_key_path: "/path/to/key.pem"
+  ```
+  Uses `axum-server` + `rustls` for zero-dependency TLS (no OpenSSL needed).
+  Dashboard URL switches from `http://` to `https://` when TLS enabled.
+
+### Sprint 6 Summary
+- Dream race condition fix (v5.14.0): Mutex-based `DreamLock` eliminates TOCTOU
+- Web TLS support (v5.15.0): HTTPS dashboard with `rustls`
+- Streaming LLM deferred to future sprint (larger API surface change)
+
 ## [5.14.0] - 2026-04-06
 
 ### Added
