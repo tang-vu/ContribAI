@@ -12,8 +12,8 @@ pub mod wizard;
 
 // Re-export common helpers for command handlers
 pub use common::{
-    create_github, create_llm, create_memory, load_config, parse_github_url,
-    print_banner, print_config_summary, print_result,
+    create_github, create_llm, create_memory, load_config, parse_github_url, print_banner,
+    print_config_summary, print_result,
 };
 
 use clap::{Parser, Subcommand};

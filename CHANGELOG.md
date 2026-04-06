@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-04-06
+
+### Added
+- **67 new tests** across 5 test suites (502 → 569 total):
+  - `ast_all_languages.rs` (22 tests): Symbol extraction for all 13 languages (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, PHP, C#, HTML, CSS) plus edge cases: empty files, syntax errors, unicode, deeply nested, mixed extensions
+  - `middleware_chain.rs` (11 tests): Rate limit enforcement, validation, quality gate, chain short-circuit
+  - `task_router.rs` (12 tests): Task routing for Analysis/CodeGen/Review/Planning, complexity-based model selection, performance/economy strategies
+  - `mcp_server.rs` (11 tests): JSON-RPC format validation, argument validation for all tool types
+  - `notifications_scheduler.rs` (11 tests): HMAC signature verification, webhook URL format validation, cron expression parsing, scheduler config defaults
+
 ## [5.12.0] - 2026-04-06
 
 ### Added
