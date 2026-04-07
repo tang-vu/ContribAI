@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.16.0] - 2026-04-06
+
+### Added
+- **`/metrics` endpoint** — Prometheus-format metrics for monitoring:
+  - `contribai_pipeline_runs_total` — Total pipeline runs
+  - `contribai_pr_submissions_total` — Total PRs submitted
+  - `contribai_pr_merged_total` — Total PRs merged
+  - `contribai_findings_total` — Total findings
+  - `contribai_errors_total` — Total errors
+  - `contribai_cache_entries_total` — Valid LLM cache entries
+  - `contribai_circuit_breaker_state` — Circuit breaker state (0/1/2)
+- **`ARCHITECTURE.md`** — Comprehensive architecture documentation
+- **`RUNBOOK.md`** — Troubleshooting guide and maintenance procedures
+
+### Sprint 7 Summary
+- Documentation: ARCHITECTURE.md (system overview, data model, config reference)
+- Documentation: RUNBOOK.md (common issues, debug mode, emergency procedures)
+- Observability: /metrics endpoint in Prometheus format
+- Polish: 0 clippy warnings, all tests pass
+
 ## [5.15.0] - 2026-04-06
 
 ### Added

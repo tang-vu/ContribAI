@@ -289,6 +289,112 @@ pub async fn get_runs(
     Json(runs)
 }
 
+/// GET /metrics — Prometheus-format metrics for monitoring.
+///
+/// Exposed metrics:
+/// - `contribai_pipeline_runs_total` — Total pipeline runs
+/// - `contribai_pr_submissions_total` — Total PRs submitted
+/// - `contribai_pr_merged_total` — Total PRs merged
+/// - `contribai_findings_total` — Total findings across all runs
+/// - `contribai_errors_total` — Total errors across all runs
+/// - `contribai_cache_entries_total` — LLM cache entries
+/// - `contribai_circuit_breaker_state` — Circuit breaker state (0=Closed, 1=Open, 2=HalfOpen)
+pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let stats = state.memory.get_stats().unwrap_or_default();
+    let cache_stats = get_cache_stats();
+
+    let prs_submitted = stats.get("total_prs_submitted").unwrap_or(&0);
+    let prs_merged = stats.get("prs_merged").unwrap_or(&0);
+    let findings = stats.get("total_findings").unwrap_or(&0);
+    let errors = stats.get("total_errors").unwrap_or(&0);
+    let runs = stats.get("total_runs").unwrap_or(&0);
+
+    let metrics = format!(
+        "# HELP contribai_pipeline_runs_total Total pipeline runs.\n\
+         # TYPE contribai_pipeline_runs_total counter\n\
+         contribai_pipeline_runs_total {}\n\n\
+         # HELP contribai_pr_submissions_total Total PRs submitted.\n\
+         # TYPE contribai_pr_submissions_total counter\n\
+         contribai_pr_submissions_total {}\n\n\
+         # HELP contribai_pr_merged_total Total PRs merged.\n\
+         # TYPE contribai_pr_merged_total counter\n\
+         contribai_pr_merged_total {}\n\n\
+         # HELP contribai_findings_total Total findings discovered.\n\
+         # TYPE contribai_findings_total counter\n\
+         contribai_findings_total {}\n\n\
+         # HELP contribai_errors_total Total errors encountered.\n\
+         # TYPE contribai_errors_total counter\n\
+         contribai_errors_total {}\n\n\
+         # HELP contribai_cache_entries_total LLM cache entries (valid).\n\
+         # TYPE contribai_cache_entries_total gauge\n\
+         contribai_cache_entries_total {}\n\n\
+         # HELP contribai_circuit_breaker_state Circuit breaker state (0=Closed, 1=Open, 2=HalfOpen).\n\
+         # TYPE contribai_circuit_breaker_state gauge\n\
+         contribai_circuit_breaker_state 0\n",
+        runs,
+        prs_submitted,
+        prs_merged,
+        findings,
+        errors,
+        cache_stats.valid_entries,
+    );
+
+    (
+        StatusCode::OK,
+        [("Content-Type", "text/plain; version=0.0.4; charset=utf-8")],
+        metrics,
+    )
+}
+
+/// Get cache stats from the LLM cache database if it exists.
+fn get_cache_stats() -> CacheMetrics {
+    let cache_path = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".contribai")
+        .join("llm_cache.db");
+
+    if !cache_path.exists() {
+        return CacheMetrics {
+            valid_entries: 0,
+            total_entries: 0,
+        };
+    }
+
+    // Quick SQLite query to count cache entries
+    match rusqlite::Connection::open_with_flags(
+        &cache_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) {
+        Ok(conn) => {
+            let total: i64 = conn
+                .query_row("SELECT COUNT(*) FROM llm_cache", [], |r| r.get(0))
+                .unwrap_or(0);
+            let valid: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM llm_cache WHERE expires_at > datetime('now')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            CacheMetrics {
+                valid_entries: valid,
+                total_entries: total,
+            }
+        }
+        Err(_) => CacheMetrics {
+            valid_entries: 0,
+            total_entries: 0,
+        },
+    }
+}
+
+/// Cache metrics struct.
+#[allow(dead_code)]
+struct CacheMetrics {
+    valid_entries: i64,
+    total_entries: i64,
+}
+
 /// POST /api/run — trigger a background run (requires API key if configured)
 async fn trigger_run(
     headers: HeaderMap,
@@ -387,6 +493,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/repos", get(get_repos))
         .route("/api/prs", get(get_prs))
         .route("/api/runs", get(get_runs))
+        .route("/metrics", get(get_metrics))
         .route("/api/webhooks/github", post(github_webhook))
         // Protected routes — auth checked inside each handler
         .route("/api/run", post(trigger_run))
