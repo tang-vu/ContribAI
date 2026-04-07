@@ -249,6 +249,14 @@ pub struct LlmConfig {
     /// Cache TTL in days (default: 7).
     #[serde(default = "default_llm_cache_ttl_days")]
     pub cache_ttl_days: u64,
+    /// ── GitHub Copilot Integration ──
+    /// Set to true to use Copilot token exchange instead of API key.
+    #[serde(default)]
+    pub copilot: bool,
+    /// ── Provider Fallback Chain ──
+    /// List of fallback providers in order (e.g., ["vertex/gemini-3-pro", "openai/gpt-4o"]).
+    #[serde(default)]
+    pub fallback: Vec<String>,
 }
 
 fn default_llm_cache_ttl_days() -> u64 {
@@ -310,6 +318,8 @@ impl Default for LlmConfig {
             vertex_location: default_vertex_location(),
             cache_enabled: true,
             cache_ttl_days: default_llm_cache_ttl_days(),
+            copilot: false,
+            fallback: vec![],
         }
     }
 }

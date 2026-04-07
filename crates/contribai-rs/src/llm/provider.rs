@@ -899,28 +899,107 @@ impl LlmProvider for OllamaProvider {
     }
 }
 
+// ── Fallback Provider ──────────────────────────────────────────────────────
+
+/// Wraps a primary provider and a list of fallback providers.
+/// If the primary fails, tries each fallback in order until one succeeds.
+pub struct FallbackProvider {
+    primary: Box<dyn LlmProvider>,
+    fallbacks: Vec<Box<dyn LlmProvider>>,
+}
+
+impl FallbackProvider {
+    pub fn new(primary: Box<dyn LlmProvider>, fallbacks: Vec<Box<dyn LlmProvider>>) -> Self {
+        Self { primary, fallbacks }
+    }
+}
+
+#[async_trait]
+impl LlmProvider for FallbackProvider {
+    async fn complete(
+        &self,
+        prompt: &str,
+        system: Option<&str>,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> Result<String> {
+        // Try primary first
+        match self.primary.complete(prompt, system, temperature, max_tokens).await {
+            Ok(response) => return Ok(response),
+            Err(e) => {
+                tracing::warn!(error = %e, "Primary LLM failed, trying fallbacks");
+            }
+        }
+
+        // Try each fallback in order
+        for (i, fallback) in self.fallbacks.iter().enumerate() {
+            match fallback.complete(prompt, system, temperature, max_tokens).await {
+                Ok(response) => {
+                    tracing::info!(fallback_index = i, "Fallback succeeded");
+                    return Ok(response);
+                }
+                Err(e) => {
+                    tracing::warn!(fallback_index = i, error = %e, "Fallback failed");
+                }
+            }
+        }
+
+        // All failed
+        Err(ContribError::Llm(
+            "All LLM providers (primary + fallbacks) failed".into(),
+        ))
+    }
+
+    async fn chat(
+        &self,
+        messages: &[ChatMessage],
+        system: Option<&str>,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> Result<String> {
+        // Try primary first
+        match self.primary.chat(messages, system, temperature, max_tokens).await {
+            Ok(response) => return Ok(response),
+            Err(e) => {
+                tracing::warn!(error = %e, "Primary LLM chat failed, trying fallbacks");
+            }
+        }
+
+        // Try each fallback in order
+        for (i, fallback) in self.fallbacks.iter().enumerate() {
+            match fallback.chat(messages, system, temperature, max_tokens).await {
+                Ok(response) => {
+                    tracing::info!(fallback_index = i, "Fallback chat succeeded");
+                    return Ok(response);
+                }
+                Err(e) => {
+                    tracing::warn!(fallback_index = i, error = %e, "Fallback chat failed");
+                }
+            }
+        }
+
+        Err(ContribError::Llm(
+            "All LLM providers (primary + fallbacks) failed".into(),
+        ))
+    }
+}
+
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 /// Create an LLM provider instance from config, wrapped with retry + cache logic.
+/// If the primary provider fails, falls back through the configured fallback chain.
 pub fn create_llm_provider(config: &LlmConfig) -> Result<Box<dyn LlmProvider>> {
     use super::cache::CachedLlmProvider;
+    use super::copilot::CopilotProvider;
     use super::retry::RetryingProvider;
 
-    let base: Box<dyn LlmProvider> = match config.provider.as_str() {
-        "gemini" | "vertex" => Ok(Box::new(GeminiProvider::new(config)?) as Box<dyn LlmProvider>),
-        "openai" => Ok(Box::new(OpenAIProvider::new(config)?) as Box<dyn LlmProvider>),
-        "anthropic" => Ok(Box::new(AnthropicProvider::new(config)?) as Box<dyn LlmProvider>),
-        "ollama" => Ok(Box::new(OllamaProvider::new(config)?) as Box<dyn LlmProvider>),
-        other => Err(ContribError::Llm(format!(
-            "Unknown LLM provider: {}. Available: gemini, vertex, openai, anthropic, ollama",
-            other
-        ))),
-    }?;
+    // Build primary provider
+    let base: Box<dyn LlmProvider> = create_single_provider(config)?;
 
-    // Wrap with retry (3 retries, 1s base delay)
+    // Wrap with retry
     let with_retry = Box::new(RetryingProvider::with_config(base, 3, 1000));
 
-    // Optionally wrap with cache (cache layer is outermost — hits skip retry + API)
+    // Wrap with cache if enabled
     if config.cache_enabled {
         let cache_path = dirs::home_dir()
             .unwrap_or_default()
@@ -936,9 +1015,80 @@ pub fn create_llm_provider(config: &LlmConfig) -> Result<Box<dyn LlmProvider>> {
             ttl_days = config.cache_ttl_days,
             "LLM response cache enabled"
         );
+
+        // Wrap with fallback chain if configured
+        if !config.fallback.is_empty() {
+            let fallback_providers: Vec<Box<dyn LlmProvider>> = config
+                .fallback
+                .iter()
+                .filter_map(|spec| {
+                    let fallback_config = parse_provider_spec(spec, config);
+                    match create_single_provider(&fallback_config) {
+                        Ok(p) => {
+                            let with_r =
+                                Box::new(RetryingProvider::with_config(p, 2, 2000)) as Box<dyn LlmProvider>;
+                            Some(with_r)
+                        }
+                        Err(e) => {
+                            tracing::warn!(provider = %spec, error = %e, "Fallback provider init failed");
+                            None
+                        }
+                    }
+                })
+                .collect();
+
+            if !fallback_providers.is_empty() {
+                let fb_count = fallback_providers.len();
+                let chain = FallbackProvider::new(Box::new(cached), fallback_providers);
+                tracing::info!(fallbacks = fb_count, "LLM fallback chain enabled");
+                return Ok(Box::new(chain) as Box<dyn LlmProvider>);
+            }
+        }
+
         Ok(Box::new(cached) as Box<dyn LlmProvider>)
     } else {
         Ok(with_retry)
+    }
+}
+
+/// Create a single LLM provider without retry/cache/fallback wrappers.
+fn create_single_provider(config: &LlmConfig) -> Result<Box<dyn LlmProvider>> {
+    use super::copilot::CopilotProvider;
+    match config.provider.as_str() {
+        "gemini" | "vertex" => Ok(Box::new(GeminiProvider::new(config)?) as Box<dyn LlmProvider>),
+        "openai" => Ok(Box::new(OpenAIProvider::new(config)?) as Box<dyn LlmProvider>),
+        "anthropic" => Ok(Box::new(AnthropicProvider::new(config)?) as Box<dyn LlmProvider>),
+        "ollama" => Ok(Box::new(OllamaProvider::new(config)?) as Box<dyn LlmProvider>),
+        "copilot" => Ok(Box::new(CopilotProvider::new(config)?) as Box<dyn LlmProvider>),
+        other => Err(ContribError::Llm(format!(
+            "Unknown LLM provider: {}. Available: gemini, vertex, openai, anthropic, ollama, copilot",
+            other
+        ))),
+    }
+}
+
+/// Parse a provider spec like "openai/gpt-4o" or "vertex/gemini-3-pro" into a temporary config.
+fn parse_provider_spec(spec: &str, base: &LlmConfig) -> LlmConfig {
+    let parts: Vec<&str> = spec.splitn(2, '/').collect();
+    let (provider, model) = if parts.len() == 2 {
+        (parts[0].to_string(), parts[1].to_string())
+    } else {
+        (spec.to_string(), base.model.clone())
+    };
+
+    LlmConfig {
+        provider,
+        model,
+        temperature: base.temperature,
+        max_tokens: base.max_tokens,
+        api_key: base.api_key.clone(),
+        base_url: base.base_url.clone(),
+        vertex_project: base.vertex_project.clone(),
+        vertex_location: base.vertex_location.clone(),
+        cache_enabled: false, // Cache is on outer layer
+        cache_ttl_days: base.cache_ttl_days,
+        copilot: false,
+        fallback: vec![],
     }
 }
 
@@ -984,6 +1134,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1007,6 +1159,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1025,6 +1179,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1043,6 +1199,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1061,6 +1219,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1079,6 +1239,8 @@ mod tests {
             base_url: None,
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1097,6 +1259,8 @@ mod tests {
             base_url: Some("https://my-proxy.example.com/v1".into()),
             vertex_project: String::new(),
             vertex_location: "global".into(),
+            copilot: false,
+            fallback: vec![],
             cache_enabled: false,
             cache_ttl_days: 7,
         };
@@ -1118,6 +1282,8 @@ mod tests {
             vertex_location: "us-central1".into(),
             cache_enabled: false,
             cache_ttl_days: 7,
+            copilot: false,
+            fallback: vec![],
         };
         let result = create_llm_provider(&config);
         assert!(

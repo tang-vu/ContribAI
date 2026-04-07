@@ -65,7 +65,59 @@ pub async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
             }
         };
 
-        // ── LLM Provider status ──────────────────────────────────────────────
+        // ── LLM Provider status (enhanced — detects ALL available sources) ──
+        println!("  {}:", style("LLM Providers").bold());
+
+        // 1. GitHub Copilot
+        let copilot_ok = contribai::llm::copilot::copilot_available();
+        if copilot_ok {
+            println!(
+                "    {:<16} {} (via gh CLI — models: gpt-4o, claude-sonnet, gemini)",
+                style("Copilot:").bold(),
+                style("✅ Token detected").green()
+            );
+        } else {
+            println!(
+                "    {:<16} {} — run 'gh auth login' first",
+                style("Copilot:").bold(),
+                style("⚪ Not configured").dim()
+            );
+        }
+
+        // 2. Vertex AI
+        let vertex_token = if cfg!(target_os = "windows") {
+            std::process::Command::new("cmd")
+                .args(["/c", "gcloud", "auth", "print-access-token"])
+                .output()
+        } else {
+            std::process::Command::new("gcloud")
+                .args(["auth", "print-access-token"])
+                .output()
+        };
+        let vertex_project = if config.llm.vertex_project.is_empty() {
+            std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_else(|_| "(not set)".into())
+        } else {
+            config.llm.vertex_project.clone()
+        };
+        match &vertex_token {
+            Ok(out) if out.status.success() => {
+                println!(
+                    "    {:<16} {} (project: {})",
+                    style("Vertex AI:").bold(),
+                    style("✅ gcloud token OK").green(),
+                    style(&vertex_project).cyan()
+                );
+            }
+            _ => {
+                println!(
+                    "    {:<16} {} — run 'gcloud auth application-default login'",
+                    style("Vertex AI:").bold(),
+                    style("⚪ Not configured").dim()
+                );
+            }
+        }
+
+        // 3. Current provider (API key)
         match config.llm.provider.as_str() {
             "gemini" | "openai" | "anthropic" => {
                 if !config.llm.api_key.is_empty() {
@@ -80,57 +132,25 @@ pub async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                         .rev()
                         .collect();
                     println!(
-                        "  {:<18} {} ({} / {} key: ****{})",
-                        style("LLM:").bold(),
+                        "    {:<16} {} ({} / {} key: ****{})",
+                        style(&config.llm.provider).bold(),
                         style("✅ API key set").green(),
                         config.llm.provider,
                         config.llm.model,
                         last4
                     );
                 } else {
+                    let env_var = match config.llm.provider.as_str() {
+                        "openai" => "OPENAI_API_KEY",
+                        "anthropic" => "ANTHROPIC_API_KEY",
+                        _ => "GEMINI_API_KEY",
+                    };
                     println!(
-                        "  {:<18} {} — set {} env var",
-                        style("LLM:").bold(),
+                        "    {:<16} {} — set {} env var",
+                        style(&config.llm.provider).bold(),
                         style(format!("❌ {} key missing", config.llm.provider)).red(),
-                        match config.llm.provider.as_str() {
-                            "openai" => "OPENAI_API_KEY",
-                            "anthropic" => "ANTHROPIC_API_KEY",
-                            _ => "GEMINI_API_KEY",
-                        }
+                        env_var
                     );
-                }
-            }
-            "vertex" => {
-                let token_result = if cfg!(target_os = "windows") {
-                    std::process::Command::new("cmd")
-                        .args(["/c", "gcloud", "auth", "print-access-token"])
-                        .output()
-                } else {
-                    std::process::Command::new("gcloud")
-                        .args(["auth", "print-access-token"])
-                        .output()
-                };
-                let project = if config.llm.vertex_project.is_empty() {
-                    std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_else(|_| "(not set)".into())
-                } else {
-                    config.llm.vertex_project.clone()
-                };
-                match token_result {
-                    Ok(out) if out.status.success() => {
-                        println!(
-                            "  {:<18} {} (project: {})",
-                            style("Vertex AI:").bold(),
-                            style("✅ gcloud token OK").green(),
-                            style(&project).cyan()
-                        );
-                    }
-                    _ => {
-                        println!(
-                            "  {:<18} {} — run 'gcloud auth application-default login'",
-                            style("Vertex AI:").bold(),
-                            style("❌ gcloud token failed").red()
-                        );
-                    }
                 }
             }
             "ollama" => {
@@ -141,13 +161,13 @@ pub async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
                     .unwrap_or(false);
                 if ok {
                     println!(
-                        "  {:<18} {}",
+                        "    {:<16} {}",
                         style("Ollama:").bold(),
                         style("✅ Running on localhost:11434").green()
                     );
                 } else {
                     println!(
-                        "  {:<18} {} — start with 'ollama serve'",
+                        "    {:<16} {} — start with 'ollama serve'",
                         style("Ollama:").bold(),
                         style("❌ Not running").red()
                     );
@@ -155,8 +175,8 @@ pub async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
             }
             p => {
                 println!(
-                    "  {:<18} {}",
-                    style("LLM:").bold(),
+                    "    {:<16} {}",
+                    style(p).bold(),
                     style(format!("⚪ Provider: {}", p)).dim()
                 );
             }
