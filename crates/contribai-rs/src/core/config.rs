@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::error::{ContribError, Result};
 use super::permissions::PermissionConfig;
+use super::plugins::PluginSpec;
 
 /// Web server configuration (API auth + webhook).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +44,9 @@ impl Default for WebConfig {
 /// Top-level configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContribAIConfig {
+    /// Locale for i18n: "en", "vi", "ja", "zh-CN" (default: "en").
+    #[serde(default)]
+    pub locale: String,
     #[serde(default)]
     pub github: GitHubConfig,
     #[serde(default)]
@@ -69,6 +73,46 @@ pub struct ContribAIConfig {
     pub sandbox: SandboxConfig,
     #[serde(default)]
     pub web: WebConfig,
+    /// ── Plugin System (Sprint 16) ──
+    #[serde(default)]
+    pub plugins: Vec<PluginSpec>,
+    /// ── Enterprise Mode (Sprint 16) ──
+    #[serde(default)]
+    pub enterprise: EnterpriseConfig,
+}
+
+/// Enterprise mode configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnterpriseConfig {
+    /// Enable enterprise mode.
+    #[serde(default)]
+    pub enabled: bool,
+    /// SSO endpoint URL (SAML/OIDC).
+    pub sso_url: Option<String>,
+    /// Audit log file path.
+    pub audit_log_path: Option<String>,
+    /// Maximum daily cost in USD.
+    #[serde(default = "default_enterprise_max_daily_cost")]
+    pub max_daily_cost_usd: f64,
+    /// Allowed LLM providers (empty = all allowed).
+    #[serde(default)]
+    pub allowed_providers: Vec<String>,
+}
+
+fn default_enterprise_max_daily_cost() -> f64 {
+    100.0
+}
+
+impl Default for EnterpriseConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            sso_url: None,
+            audit_log_path: None,
+            max_daily_cost_usd: default_enterprise_max_daily_cost(),
+            allowed_providers: vec![],
+        }
+    }
 }
 
 impl ContribAIConfig {
