@@ -6,6 +6,8 @@ use contribai::github::client::GitHubClient;
 use contribai::orchestrator::memory::Memory;
 
 /// Load config from path or use defaults.
+/// If no path given, searches default locations:
+/// `./config.yaml` → `./config.yml` → `~/.contribai/config.yaml` → defaults.
 pub fn load_config(path: Option<&str>) -> anyhow::Result<ContribAIConfig> {
     match path {
         Some(p) => {
@@ -13,7 +15,17 @@ pub fn load_config(path: Option<&str>) -> anyhow::Result<ContribAIConfig> {
                 .map_err(|e| anyhow::anyhow!("Failed to load {}: {}", p, e))?;
             Ok(cfg)
         }
-        None => Ok(ContribAIConfig::default()),
+        None => {
+            // Try default locations
+            match ContribAIConfig::load() {
+                Ok(cfg) => Ok(cfg),
+                Err(e) => {
+                    // If loading fails, fall back to defaults (with env var resolution)
+                    tracing::warn!("Could not load default config: {}", e);
+                    Ok(ContribAIConfig::default())
+                }
+            }
+        }
     }
 }
 
