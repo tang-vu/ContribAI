@@ -924,7 +924,11 @@ impl LlmProvider for FallbackProvider {
         max_tokens: Option<u32>,
     ) -> Result<String> {
         // Try primary first
-        match self.primary.complete(prompt, system, temperature, max_tokens).await {
+        match self
+            .primary
+            .complete(prompt, system, temperature, max_tokens)
+            .await
+        {
             Ok(response) => return Ok(response),
             Err(e) => {
                 tracing::warn!(error = %e, "Primary LLM failed, trying fallbacks");
@@ -933,7 +937,10 @@ impl LlmProvider for FallbackProvider {
 
         // Try each fallback in order
         for (i, fallback) in self.fallbacks.iter().enumerate() {
-            match fallback.complete(prompt, system, temperature, max_tokens).await {
+            match fallback
+                .complete(prompt, system, temperature, max_tokens)
+                .await
+            {
                 Ok(response) => {
                     tracing::info!(fallback_index = i, "Fallback succeeded");
                     return Ok(response);
@@ -958,7 +965,11 @@ impl LlmProvider for FallbackProvider {
         max_tokens: Option<u32>,
     ) -> Result<String> {
         // Try primary first
-        match self.primary.chat(messages, system, temperature, max_tokens).await {
+        match self
+            .primary
+            .chat(messages, system, temperature, max_tokens)
+            .await
+        {
             Ok(response) => return Ok(response),
             Err(e) => {
                 tracing::warn!(error = %e, "Primary LLM chat failed, trying fallbacks");
@@ -967,7 +978,10 @@ impl LlmProvider for FallbackProvider {
 
         // Try each fallback in order
         for (i, fallback) in self.fallbacks.iter().enumerate() {
-            match fallback.chat(messages, system, temperature, max_tokens).await {
+            match fallback
+                .chat(messages, system, temperature, max_tokens)
+                .await
+            {
                 Ok(response) => {
                     tracing::info!(fallback_index = i, "Fallback chat succeeded");
                     return Ok(response);
@@ -990,7 +1004,6 @@ impl LlmProvider for FallbackProvider {
 /// If the primary provider fails, falls back through the configured fallback chain.
 pub fn create_llm_provider(config: &LlmConfig) -> Result<Box<dyn LlmProvider>> {
     use super::cache::CachedLlmProvider;
-    use super::copilot::CopilotProvider;
     use super::retry::RetryingProvider;
 
     // Build primary provider

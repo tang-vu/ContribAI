@@ -11,7 +11,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use reqwest::{Client, header};
+use reqwest::{header, Client};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -100,9 +100,8 @@ impl CopilotProvider {
             )));
         }
 
-        let data: Value = serde_json::from_str(&body).map_err(|e| {
-            ContribError::Llm(format!("Copilot token response parse error: {}", e))
-        })?;
+        let data: Value = serde_json::from_str(&body)
+            .map_err(|e| ContribError::Llm(format!("Copilot token response parse error: {}", e)))?;
 
         let token = data["token"].as_str().ok_or_else(|| {
             ContribError::Llm("Copilot token response missing 'token' field".into())
@@ -134,7 +133,10 @@ impl CopilotProvider {
             .args(["auth", "token"])
             .output()
             .map_err(|e| {
-                ContribError::Llm(format!("gh CLI not found: {}. Run `gh auth login` first.", e))
+                ContribError::Llm(format!(
+                    "gh CLI not found: {}. Run `gh auth login` first.",
+                    e
+                ))
             })?;
 
         if !output.status.success() {
@@ -202,9 +204,8 @@ impl CopilotProvider {
             )));
         }
 
-        let data: Value = serde_json::from_str(&body).map_err(|e| {
-            ContribError::Llm(format!("Copilot API response parse error: {}", e))
-        })?;
+        let data: Value = serde_json::from_str(&body)
+            .map_err(|e| ContribError::Llm(format!("Copilot API response parse error: {}", e)))?;
 
         let text = data["choices"][0]["message"]["content"]
             .as_str()
