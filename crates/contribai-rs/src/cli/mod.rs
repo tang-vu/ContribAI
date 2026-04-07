@@ -55,6 +55,10 @@ enum Commands {
         /// Approve HIGH risk changes for auto-submission
         #[arg(long)]
         approve: bool,
+
+        /// Agent mode: "build" (full PR flow) or "plan" (read-only analysis)
+        #[arg(long, default_value = "build")]
+        mode: String,
     },
 
     /// Hunt mode: aggressive multi-round discovery
@@ -291,8 +295,9 @@ impl Cli {
                 stars,
                 dry_run,
                 approve,
+                mode,
             } => {
-                commands::run::run_run(self.config.as_deref(), language, stars, dry_run, approve)
+                commands::run::run_run(self.config.as_deref(), language, stars, dry_run, approve, mode)
                     .await
             }
             Commands::Hunt {
@@ -462,6 +467,7 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
             stars: None,
             dry_run: false,
             approve: false,
+            mode: "build".to_string(),
         },
         2 => {
             let url: String = dialoguer::Input::new()

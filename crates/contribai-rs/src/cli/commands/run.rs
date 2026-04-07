@@ -13,9 +13,15 @@ pub async fn run_run(
     stars: Option<String>,
     dry_run: bool,
     approve: bool,
+    mode: String,
 ) -> anyhow::Result<()> {
     print_banner();
-    let config = load_config(config_path)?;
+    let mut config = load_config(config_path)?;
+
+    // Override agent mode from CLI
+    if mode != "build" {
+        config.pipeline.agent_mode = mode.clone();
+    }
 
     print_config_summary(&config, dry_run);
 
@@ -32,6 +38,15 @@ pub async fn run_run(
             "HIGH risk enabled".yellow()
         );
     }
+    println!(
+        "   {}: {}",
+        "Mode".dimmed(),
+        if mode == "plan" {
+            "plan (read-only analysis)".yellow().to_string()
+        } else {
+            "build (full PR flow)".green().to_string()
+        }
+    );
     println!();
 
     let github = create_github(&config)?;

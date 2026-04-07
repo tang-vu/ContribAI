@@ -533,6 +533,9 @@ pub struct PipelineConfig {
     /// Skip repos that already have an open PR from us (default: true).
     #[serde(default = "default_true")]
     pub skip_repos_with_open_pr: bool,
+    /// Agent mode: "build" (full PR flow) or "plan" (read-only analysis).
+    #[serde(default = "default_agent_mode")]
+    pub agent_mode: String,
     /// ── Circuit Breaker Configuration ──
     /// Number of consecutive LLM failures before opening the circuit.
     #[serde(default = "default_circuit_breaker_threshold")]
@@ -543,6 +546,10 @@ pub struct PipelineConfig {
     /// Cooldown duration in seconds before transitioning Open → HalfOpen.
     #[serde(default = "default_circuit_breaker_cooldown_secs")]
     pub circuit_breaker_cooldown_secs: u64,
+}
+
+fn default_agent_mode() -> String {
+    "build".to_string()
 }
 
 fn default_circuit_breaker_threshold() -> u32 {
@@ -587,6 +594,7 @@ impl Default for PipelineConfig {
             skip_docs_prs: true,
             require_bug_verification: true,
             skip_repos_with_open_pr: true,
+            agent_mode: default_agent_mode(),
             circuit_breaker_failure_threshold: default_circuit_breaker_threshold(),
             circuit_breaker_success_threshold: default_circuit_breaker_success_threshold(),
             circuit_breaker_cooldown_secs: default_circuit_breaker_cooldown_secs(),

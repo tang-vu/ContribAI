@@ -1073,10 +1073,34 @@ impl<'a> ContribPipeline<'a> {
             repo = %repo.full_name,
             raw = analysis.findings.len(),
             filtered = findings.len(),
+            mode = self.config.pipeline.agent_mode,
             "Findings after filtering"
         );
 
         if findings.is_empty() {
+            return Ok(result);
+        }
+
+        // ── Agent Mode: Plan (read-only) vs Build (full PR flow) ────────
+        if self.config.pipeline.agent_mode == "plan" {
+            info!(
+                repo = %repo.full_name,
+                findings = findings.len(),
+                "📋 Plan mode — analysis only, no code generation or PRs"
+            );
+            result.contributions_generated = 0;
+            result.prs_created = 0;
+
+            // Print findings summary
+            for f in &findings {
+                info!(
+                    "  {} [{}/{}] {}",
+                    f.severity,
+                    f.file_path,
+                    f.line_start.map(|l| l.to_string()).unwrap_or_else(|| "?".into()),
+                    f.title
+                );
+            }
             return Ok(result);
         }
 
