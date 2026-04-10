@@ -8,3 +8,10 @@ members = [
 #   cargo build --release
 #   cargo test
 #   cargo install --path crates/contribai-rs
+
+[profile.release]
+opt-level = "z"      # Size optimization
+lto = true           # Link-time optimization
+codegen-units = 1    # Single codegen unit for better optimization
+strip = true         # Strip debug symbols
+panic = "abort"      # Smaller binary

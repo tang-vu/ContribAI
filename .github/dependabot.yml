@@ -1,6 +1,26 @@
 version: 2
 
 updates:
+  # Rust dependencies (primary codebase)
+  - package-ecosystem: "cargo"
+    directory: "/crates/contribai-rs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      rust-deps:
+        patterns:
+          - "*"
+    reviewers:
+      - "tang-vu"
+
+  # Python legacy dependencies
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -15,6 +35,7 @@ updates:
         patterns:
           - "*"
 
+  # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

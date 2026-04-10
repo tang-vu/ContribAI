@@ -42,7 +42,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = "1"
 thiserror = "2"
 
-# AST Analysis (15 languages)
+# AST Analysis (13 languages)
+# Note: tree-sitter core 0.24, grammars still at 0.23 (0.24/0.25 rolling out gradually)
 tree-sitter = "0.24"
 tree-sitter-python = "0.23"
 tree-sitter-javascript = "0.23"
@@ -75,7 +76,7 @@ fd-lock = "4.0"
 
 # Web server (dashboard API) — gated behind `web` feature
 axum = { version = "0.7", features = ["json", "query"], optional = true }
-tower = { version = "0.4", optional = true }
+tower = { version = "0.5", optional = true }
 tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
 axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
 
@@ -107,10 +108,8 @@ tempfile = "3"
 wiremock = "0.6"
 tokio-test = "0.4"
 assert_matches = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
-[profile.release]
-opt-level = "z"      # Size optimization
-lto = true           # Link-time optimization
-codegen-units = 1    # Single codegen unit for better optimization
-strip = true         # Strip debug symbols
-panic = "abort"      # Smaller binary
+[[bench]]
+name = "pipeline"
+harness = false
