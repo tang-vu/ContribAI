@@ -28,6 +28,6 @@ pub mod status;
 pub mod system_status;
 pub mod target;
 pub mod templates;
+pub mod undo;
 pub mod watchlist;
 pub mod web_server;
-pub mod undo;

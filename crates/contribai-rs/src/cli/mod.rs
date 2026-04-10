@@ -315,8 +315,15 @@ impl Cli {
                 approve,
                 mode,
             } => {
-                commands::run::run_run(self.config.as_deref(), language, stars, dry_run, approve, mode)
-                    .await
+                commands::run::run_run(
+                    self.config.as_deref(),
+                    language,
+                    stars,
+                    dry_run,
+                    approve,
+                    mode,
+                )
+                .await
             }
             Commands::Hunt {
                 rounds,

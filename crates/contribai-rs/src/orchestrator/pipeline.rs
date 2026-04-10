@@ -1097,7 +1097,9 @@ impl<'a> ContribPipeline<'a> {
                     "  {} [{}/{}] {}",
                     f.severity,
                     f.file_path,
-                    f.line_start.map(|l| l.to_string()).unwrap_or_else(|| "?".into()),
+                    f.line_start
+                        .map(|l| l.to_string())
+                        .unwrap_or_else(|| "?".into()),
                     f.title
                 );
             }

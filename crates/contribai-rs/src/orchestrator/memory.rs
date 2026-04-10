@@ -442,7 +442,9 @@ impl Memory {
     pub fn get_sessions(&self) -> Result<Vec<serde_json::Value>> {
         let db = self.lock_db()?;
         let mut stmt = db
-            .prepare("SELECT id, name, mode, status, created_at FROM sessions ORDER BY created_at DESC")
+            .prepare(
+                "SELECT id, name, mode, status, created_at FROM sessions ORDER BY created_at DESC",
+            )
             .map_err(|e| ContribError::Database(format!("Session query: {}", e)))?;
         let rows = stmt
             .query_map([], |r| {

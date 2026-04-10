@@ -3,6 +3,8 @@
 //! Keyboard-driven interface for browsing PRs, repos, and running operations.
 //! Built with ratatui + crossterm. Modeled after Python `contribai interactive`.
 
+#![allow(clippy::clone_on_copy)] // TableState/ListState are Copy, explicit clone() is intentional
+
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
@@ -287,7 +289,7 @@ pub fn run_interactive_tui(config: &ContribAIConfig) -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(config);
-    let result = run_loop(&mut terminal, &mut app);
+    let result = run_loop(&mut terminal, &mut app).map_err(|e| anyhow::anyhow!("TUI error: {}", e));
 
     disable_raw_mode()?;
     execute!(
@@ -299,10 +301,10 @@ pub fn run_interactive_tui(config: &ContribAIConfig) -> anyhow::Result<()> {
     result
 }
 
-fn run_loop<B: ratatui::backend::Backend>(
+fn run_loop<B: ratatui::backend::Backend + 'static>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         terminal.draw(|f| render(f, app))?;
 

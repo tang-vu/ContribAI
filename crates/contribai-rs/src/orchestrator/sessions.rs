@@ -53,12 +53,7 @@ impl SessionManager {
 
     /// List all sessions.
     pub fn list(&self) -> Vec<Session> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
+        self.sessions.lock().unwrap().values().cloned().collect()
     }
 
     /// Get a session by ID.

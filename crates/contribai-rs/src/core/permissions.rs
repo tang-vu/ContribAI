@@ -151,13 +151,18 @@ fn glob_match(pattern: &str, path: &str) -> bool {
             }
             // Check suffix with glob matching
             if !suffix_pattern.is_empty() {
-                let suffix_regex = format!("^{}$", suffix_pattern.replace('*', "[^/]*").replace('?', "."));
+                let suffix_regex = format!(
+                    "^{}$",
+                    suffix_pattern.replace('*', "[^/]*").replace('?', ".")
+                );
                 // Try matching against full path and just filename
                 let full_match = regex::Regex::new(&suffix_regex)
                     .ok()
                     .map(|r| r.is_match(path))
                     .unwrap_or(false);
-                let file_match = path.rsplit('/').next()
+                let file_match = path
+                    .rsplit('/')
+                    .next()
                     .and_then(|f| regex::Regex::new(&suffix_regex).ok().map(|r| r.is_match(f)))
                     .unwrap_or(false);
                 if !full_match && !file_match {

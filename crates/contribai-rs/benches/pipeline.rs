@@ -41,7 +41,10 @@ fn bench_framework_detection(c: &mut Criterion) {
     use std::collections::HashMap;
 
     let imports = HashMap::from([
-        ("views.py".to_string(), vec!["django.http".to_string(), "django.shortcuts".to_string()]),
+        (
+            "views.py".to_string(),
+            vec!["django.http".to_string(), "django.shortcuts".to_string()],
+        ),
         ("models.py".to_string(), vec!["django.db".to_string()]),
         ("urls.py".to_string(), vec!["django.urls".to_string()]),
     ]);
@@ -49,10 +52,8 @@ fn bench_framework_detection(c: &mut Criterion) {
     c.bench_function("framework_detection_django", |b| {
         b.iter(|| {
             // Simulate framework detection logic
-            let all_imports: std::collections::HashSet<String> = imports
-                .values()
-                .flat_map(|i| i.iter().cloned())
-                .collect();
+            let all_imports: std::collections::HashSet<String> =
+                imports.values().flat_map(|i| i.iter().cloned()).collect();
             let mut frameworks = std::collections::HashSet::new();
             if all_imports.iter().any(|i| i.contains("django")) {
                 frameworks.insert("django".to_string());
@@ -89,7 +90,11 @@ fn bench_risk_classification(c: &mut Criterion) {
         b.iter(|| {
             classify_risk(
                 black_box("refactor"),
-                black_box(&["auth.py".to_string(), "db.py".to_string(), "api.py".to_string()]),
+                black_box(&[
+                    "auth.py".to_string(),
+                    "db.py".to_string(),
+                    "api.py".to_string(),
+                ]),
                 black_box(200),
             )
         })

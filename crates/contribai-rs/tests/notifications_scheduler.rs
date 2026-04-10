@@ -5,6 +5,8 @@
 //! - Webhook signature verification (HMAC)
 //! - Cron scheduler: parse cron expression, fire at correct times, skip missed
 
+use hmac::KeyInit;
+
 // ── Notification Tests ──────────────────────────────────────────────────
 
 #[test]

@@ -1009,11 +1009,13 @@ pub fn create_llm_provider(config: &LlmConfig) -> Result<Box<dyn LlmProvider>> {
 
 /// Create LLM providers with optional small model override.
 /// Returns (primary_provider, small_model_provider).
-pub fn create_llm_providers(config: &LlmConfig) -> Result<(Box<dyn LlmProvider>, Box<dyn LlmProvider>)> {
+pub fn create_llm_providers(
+    config: &LlmConfig,
+) -> Result<(Box<dyn LlmProvider>, Box<dyn LlmProvider>)> {
     use super::retry::RetryingProvider;
-    
+
     let primary = create_llm_provider_with_config(config, None)?;
-    
+
     let small_config = if let Some(ref small_model) = config.small_model {
         let mut small = config.clone();
         // Parse small_model as "provider/model" or just use model name with same provider
@@ -1030,20 +1032,25 @@ pub fn create_llm_providers(config: &LlmConfig) -> Result<(Box<dyn LlmProvider>,
     } else {
         config.clone()
     };
-    
+
     let small = create_single_provider(&small_config)
         .map(|p| Box::new(RetryingProvider::with_config(p, 2, 1000)) as Box<dyn LlmProvider>)
         .unwrap_or_else(|_| {
             tracing::warn!("Small model init failed, falling back to primary");
             create_single_provider(config)
-                .map(|p| Box::new(RetryingProvider::with_config(p, 2, 1000)) as Box<dyn LlmProvider>)
+                .map(|p| {
+                    Box::new(RetryingProvider::with_config(p, 2, 1000)) as Box<dyn LlmProvider>
+                })
                 .expect("Primary provider must be valid")
         });
-    
+
     Ok((primary, small))
 }
 
-fn create_llm_provider_with_config(config: &LlmConfig, _small_model_override: Option<&str>) -> Result<Box<dyn LlmProvider>> {
+fn create_llm_provider_with_config(
+    config: &LlmConfig,
+    _small_model_override: Option<&str>,
+) -> Result<Box<dyn LlmProvider>> {
     use super::cache::CachedLlmProvider;
     use super::retry::RetryingProvider;
 

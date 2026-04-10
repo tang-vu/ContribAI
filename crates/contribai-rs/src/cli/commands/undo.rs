@@ -20,7 +20,10 @@ pub fn run_undo(config_path: Option<&str>, yes: bool) -> anyhow::Result<()> {
     let total = mgr.count()?;
 
     if total == 0 {
-        println!("{}", style("📭 No snapshots recorded — nothing to undo").dim());
+        println!(
+            "{}",
+            style("📭 No snapshots recorded — nothing to undo").dim()
+        );
         return Ok(());
     }
 
@@ -67,11 +70,7 @@ pub fn run_undo(config_path: Option<&str>, yes: bool) -> anyhow::Result<()> {
                     e
                 );
             } else {
-                println!(
-                    "{} Restored {}",
-                    style("✅").green(),
-                    snap.path
-                );
+                println!("{} Restored {}", style("✅").green(), snap.path);
             }
         } else {
             // New file — delete it
@@ -85,21 +84,14 @@ pub fn run_undo(config_path: Option<&str>, yes: bool) -> anyhow::Result<()> {
                         e
                     );
                 } else {
-                    println!(
-                        "{} Deleted new file {}",
-                        style("✅").green(),
-                        snap.path
-                    );
+                    println!("{} Deleted new file {}", style("✅").green(), snap.path);
                 }
             }
         }
 
         // Clear snapshot from DB
         mgr.clear_repo(&snap.repo)?;
-        println!(
-            "{} Snapshot removed",
-            style("🗑️").dim()
-        );
+        println!("{} Snapshot removed", style("🗑️").dim());
     } else {
         println!("{}", style("📭 No snapshots found").dim());
     }

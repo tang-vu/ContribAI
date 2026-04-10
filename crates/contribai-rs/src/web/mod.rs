@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Sha256;
@@ -525,7 +525,10 @@ async fn create_session(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     verify_api_key(&headers, query.api_key.as_deref(), &state.api_keys)?;
-    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("default");
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let mode = body.get("mode").and_then(|v| v.as_str()).unwrap_or("build");
     let session_id = uuid::Uuid::new_v4().to_string();
     state

@@ -702,27 +702,30 @@ mod framework_tests {
 
     #[test]
     fn test_detect_django() {
-        let imports = HashMap::from([
-            ("views.py".to_string(), vec!["django.http".to_string(), "django.shortcuts".to_string()]),
-        ]);
+        let imports = HashMap::from([(
+            "views.py".to_string(),
+            vec!["django.http".to_string(), "django.shortcuts".to_string()],
+        )]);
         let frameworks = detect_frameworks(&imports);
         assert!(frameworks.contains("django"));
     }
 
     #[test]
     fn test_detect_react() {
-        let imports = HashMap::from([
-            ("App.jsx".to_string(), vec!["react".to_string(), "react-dom".to_string()]),
-        ]);
+        let imports = HashMap::from([(
+            "App.jsx".to_string(),
+            vec!["react".to_string(), "react-dom".to_string()],
+        )]);
         let frameworks = detect_frameworks(&imports);
         assert!(frameworks.contains("react"));
     }
 
     #[test]
     fn test_detect_multiple_rust() {
-        let imports = HashMap::from([
-            ("main.rs".to_string(), vec!["axum".to_string(), "tokio".to_string(), "serde".to_string()]),
-        ]);
+        let imports = HashMap::from([(
+            "main.rs".to_string(),
+            vec!["axum".to_string(), "tokio".to_string(), "serde".to_string()],
+        )]);
         let frameworks = detect_frameworks(&imports);
         assert!(frameworks.contains("axum"));
         assert!(frameworks.contains("tokio"));
@@ -738,9 +741,10 @@ mod framework_tests {
 
     #[test]
     fn test_detect_no_frameworks() {
-        let imports = HashMap::from([
-            ("utils.py".to_string(), vec!["os".to_string(), "sys".to_string()]),
-        ]);
+        let imports = HashMap::from([(
+            "utils.py".to_string(),
+            vec!["os".to_string(), "sys".to_string()],
+        )]);
         let frameworks = detect_frameworks(&imports);
         assert!(frameworks.is_empty());
     }
