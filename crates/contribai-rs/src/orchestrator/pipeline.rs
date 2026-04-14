@@ -958,6 +958,28 @@ impl<'a> ContribPipeline<'a> {
                 "📋 Repo guidelines found"
             );
         }
+
+        // ── Check for CONTRIBUTAI_BLOCK or anti-AI policy ─────────────────
+        use crate::github::guidelines::{detects_ai_ban, has_contribai_block};
+
+        // Check block file
+        if has_contribai_block(self.github, &repo.owner, &repo.name).await {
+            info!(
+                repo = %repo.full_name,
+                "⛔ Repo has CONTRIBUTAI_BLOCK — skipping"
+            );
+            return Ok(PipelineResult::default());
+        }
+
+        // Check guidelines for AI ban phrases
+        if !guidelines.contributing_md.is_empty() && detects_ai_ban(&guidelines.contributing_md) {
+            info!(
+                repo = %repo.full_name,
+                "⛔ Repo guidelines ban AI contributions — skipping"
+            );
+            return Ok(PipelineResult::default());
+        }
+
         let guidelines = Some(guidelines);
 
         // ── Inject PR history into context for dedup ─────────────────────

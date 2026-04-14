@@ -2,6 +2,10 @@
 //!
 //! Port from Python `github/guidelines.py`.
 //! Reads CONTRIBUTING.md, PR templates, and adapts PR format.
+//!
+//! Enhanced in v6.4.1 (Sprint 22.5):
+//! - CONTRIBUTAI_BLOCK file detection
+//! - Enhanced anti-AI phrase detection (10+ patterns)
 
 use regex::Regex;
 use tracing::info;
@@ -23,6 +27,14 @@ const CONTRIBUTING_PATHS: &[&str] = &[
     "contributing.md",
     ".github/CONTRIBUTING.md",
     "docs/CONTRIBUTING.md",
+];
+
+/// Paths where maintainers can place a block file to opt-out of ContribAI.
+const CONTRIBAI_BLOCK_PATHS: &[&str] = &[
+    ".github/CONTRIBUTAI_BLOCK",
+    "CONTRIBUTAI_BLOCK",
+    ".github/CONTRIBUTAI.md",
+    "CONTRIBUTAI.md",
 ];
 
 /// Parsed contribution guidelines for a repository.
@@ -285,6 +297,91 @@ pub fn contribai_attribution() -> String {
         .into()
 }
 
+// ── Anti-AI & Block Detection (Sprint 22.5) ────────────────────────────────
+
+/// Check if a repository has a CONTRIBUTAI_BLOCK file.
+///
+/// Maintainers can place a file at any of these paths to opt-out:
+/// - `.github/CONTRIBUTAI_BLOCK`
+/// - `CONTRIBUTAI_BLOCK`
+/// - `.github/CONTRIBUTAI.md`
+/// - `CONTRIBUTAI.md`
+///
+/// Returns `true` if a block file exists.
+pub async fn has_contribai_block(github: &GitHubClient, owner: &str, repo: &str) -> bool {
+    for path in CONTRIBAI_BLOCK_PATHS {
+        match github.get_file_content(owner, repo, path, None).await {
+            Ok(content) if !content.is_empty() => {
+                info!(owner, repo, path, "CONTRIBUTAI_BLOCK found — skipping repo");
+                return true;
+            }
+            _ => continue,
+        }
+    }
+    false
+}
+
+/// Check if contribution guidelines contain anti-AI contribution phrases.
+///
+/// Detects 15+ patterns that indicate the repo doesn't want automated/AI contributions:
+/// - "no AI", "no automated", "no bot", "no generated"
+/// - "manual contributions only"
+/// - "no spam"
+/// - "human only"
+///
+/// Returns `true` if an anti-AI phrase is detected.
+pub fn detects_ai_ban(guidelines: &str) -> bool {
+    let text = guidelines.to_lowercase();
+
+    // 15 anti-AI/anti-automation patterns
+    let patterns = [
+        r"no\s+ai(\s|\.|,|!)?\s*(contrib|pr|submission|code|generated)",
+        r"no\s+automated\s+(pr|contribution|submissions|pull\s*request|code)",
+        r"no\s+bot\s+(contrib|pr|submission|pull\s*request)",
+        r"no\s+ai[-\s]?generated",
+        r"ai[-\s]?generated\s+content\s+(is\s+)?(not\s+)?(allowed|welcome|accepted)",
+        r"manual\s+contributions?\s+only",
+        r"human[-\s]?only\s+(contrib|pr|code)",
+        r"no\s+spam\s+(pr|contribution|pull\s*request|automated)",
+        r"no\s+(automated|auto|ai|bot|machine)\s+pull\s*requests?",
+        r"automated\s+pr[s]?\s+are\s+(not\s+)?(allowed|welcome|accepted)",
+        r"do\s+not\s+(accept|allow|welcome)\s+(ai|bot|automated|generated)",
+        r"(we\s+)?(do\s+not\s+)?(accept|welcome)\s+(ai|bot|automated)\s+(contributions?|pr[s]?|pull\s*requests?)",
+        r"no\s+(machine|automated|scripted|generated)\s+contributions?",
+        r"(contributions?|pr[s]?)\s+must\s+be\s+(written|made|done)\s+by\s+humans?",
+        r"no\s+(llm|gpt|claude|copilot|gemini)\s+(contrib|pr|generated|code)",
+    ];
+
+    for pattern in &patterns {
+        if let Ok(re) = Regex::new(pattern) {
+            if re.is_match(&text) {
+                info!(pattern, "AI contribution ban detected");
+                return true;
+            }
+        }
+    }
+
+    // Also check for AI_POLICY.md ban content
+    detect_ai_policy_ban(&text)
+}
+
+/// Check AI_POLICY.md content for ban keywords.
+fn detect_ai_policy_ban(text: &str) -> bool {
+    let ban_phrases = [
+        "ai contributions are not allowed",
+        "automated contributions prohibited",
+        "no ai generated code",
+        "ai submissions banned",
+    ];
+
+    for phrase in &ban_phrases {
+        if text.contains(phrase) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +465,59 @@ mod tests {
         let attr = contribai_attribution();
         assert!(attr.contains("ContribAI"));
         assert!(attr.contains("tang-vu"));
+    }
+
+    // ── Sprint 22.5: Anti-AI & Block Detection ─────────────────────────
+
+    #[test]
+    fn test_detects_ai_ban_no_ai() {
+        let text = "We do not accept AI generated contributions.";
+        assert!(detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_no_automated() {
+        let text = "No automated PRs or bot submissions allowed.";
+        assert!(detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_manual_only() {
+        let text = "We only accept manual contributions from real humans.";
+        assert!(detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_llm() {
+        let text = "No LLM or GPT generated code please.";
+        assert!(detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_welcome() {
+        // Should NOT detect a ban in a welcoming message
+        let text = "We welcome all contributions! Please read our guidelines.";
+        assert!(!detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_normal_contributing() {
+        // Normal contributing guide should not trigger
+        let text = "Thank you for your interest in contributing! Please follow our code style and write tests.";
+        assert!(!detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detects_ai_ban_conventional_commits() {
+        // Conventional commits guide should not trigger
+        let text = "We use conventional commits. Examples: feat: add feature, fix: fix bug.";
+        assert!(!detects_ai_ban(text));
+    }
+
+    #[test]
+    fn test_detect_ai_policy_ban() {
+        assert!(detect_ai_policy_ban("AI contributions are not allowed"));
+        assert!(!detect_ai_policy_ban("AI contributions are welcome"));
+        assert!(detect_ai_policy_ban("automated contributions prohibited"));
     }
 }
