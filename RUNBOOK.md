@@ -227,3 +227,124 @@ rm ~/.contribai/memory.db
 2. Delete the token used by ContribAI
 3. Generate new token with `public_repo` scope
 4. Update config: `contribai config-set github.token YOUR_NEW_TOKEN`
+
+## Common Failure Modes
+
+### GitHub API Rate Limit Exceeded
+
+**Symptoms:**
+```
+Error: GitHub API error: rate limit exceeded (403)
+X-RateLimit-Remaining: 0
+```
+
+**Resolution:**
+1. Check rate limit status: `contribai system-status`
+2. Wait for rate limit reset (usually 1 hour): `curl -s https://api.github.com/rate_limit`
+3. For authenticated users: ensure `GITHUB_TOKEN` is set (5000 req/hour vs 60 unauthenticated)
+4. Use GraphQL for batched queries (reduces API calls by 60%+)
+
+### PR Rejected by Maintainers
+
+**Symptoms:**
+- PRs consistently closed without merging
+- Merge rate < 20%
+
+**Resolution:**
+1. Check closed PR analysis: `contribai patrol --dry-run`
+2. Review rejection reasons in memory: `contribai stats`
+3. Adjust contribution strategy:
+   - Reduce finding count per repo (max 2 → 1)
+   - Focus on documentation/style fixes (higher merge rate)
+   - Use `--mode issues` to solve existing issues first
+4. Review repo intelligence: `contribai analyze <repo-url>`
+
+### LLM Provider Errors
+
+**Symptoms:**
+```
+Error: LLM provider error: Gemini API error 429: Resource has been exhausted
+Error: LLM provider error: Anthropic API error 500: Internal server error
+```
+
+**Resolution:**
+1. **429 Rate Limit**: Wait and retry (automatic with exponential backoff)
+2. **5xx Server Error**: Retry automatically (up to 3 attempts)
+3. **401 Unauthorized**: Check API key: `contribai doctor`
+4. **400 Bad Request**: Prompt too large — reduce `llm.max_tokens` or increase context window
+5. **Circuit Breaker Open**: System auto-stops after 5 consecutive failures
+   - Wait 5 minutes (default cooldown)
+   - Or run `contribai run --dry-run` to reset
+
+### Build/CI Failures
+
+**Symptoms:**
+- `cargo build` fails
+- CI lint check fails
+
+**Resolution:**
+1. Run locally: `cargo clippy -- -D warnings`
+2. Format code: `cargo fmt --all`
+3. Run tests: `cargo test`
+4. Common fixes:
+   - Missing imports: check `use` statements
+   - Type errors: check function signatures changed in dependency updates
+   - Dead code: add `#[allow(dead_code)]` or remove unused code
+
+### TUI Not Responding
+
+**Symptoms:**
+- Keyboard input not working in TUI
+- TUI stuck or frozen
+
+**Resolution:**
+1. Press `q` to quit TUI
+2. If frozen: `Ctrl+C` to force quit
+3. Terminal may be in raw mode — reset: `reset` command
+4. Check terminal compatibility: TUI requires crossterm-supported terminal
+
+## Debug Mode
+
+Enable verbose logging for troubleshooting:
+```bash
+# Set log level to debug
+contribai config-set log.level debug
+
+# Or use environment variable
+RUST_LOG=debug contribai run --dry-run
+
+# Logs written to: ~/.contribai/logs/pipeline.log (JSON format)
+```
+
+## Maintenance Procedures
+
+### Monthly
+```bash
+# Update dependencies
+cargo update
+cargo clippy -- -D warnings  # verify no new warnings
+
+# Run benchmarks (track performance)
+cargo bench
+
+# Check for security advisories
+cargo audit
+```
+
+### Quarterly
+```bash
+# Review and clean memory
+contribai stats              # check memory usage
+contribai cache-stats        # check LLM cache size
+contribai cache-clear        # if cache > 100MB
+
+# Review config
+contribai config-list        # audit config settings
+contribai doctor             # health check
+```
+
+## Contact & Support
+
+- **GitHub Issues:** https://github.com/tang-vu/ContribAI/issues
+- **Discussions:** https://github.com/tang-vu/ContribAI/discussions
+- **Documentation:** https://github.com/tang-vu/ContribAI/tree/main/docs

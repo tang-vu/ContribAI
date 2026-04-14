@@ -12,8 +12,8 @@ cargo build --release
 cargo install --path crates/contribai-rs
 
 # Verify
-cargo test              # 418 tests must pass
-contribai --help        # shows 40+ commands
+cargo test              # 602 tests must pass
+contribai --help        # shows 50+ commands
 ```
 
 > **Legacy Python** is in `python/` (v4.1.0, reference only).  
@@ -43,7 +43,7 @@ contribai --help        # shows 40+ commands
 
 5. **Run tests**:
    ```bash
-   cargo test              # 418 tests
+   cargo test              # 602 tests
    cargo test -- --nocapture   # with stdout
    ```
 
@@ -85,6 +85,94 @@ contribai --help        # shows 40+ commands
 7. **Interactive TUI** — ratatui 4-tab browser (Dashboard/PRs/Repos/Actions)
 
 See [AGENTS.md](AGENTS.md) for full architecture and code patterns.
+
+## 🛠 Developer Guide
+
+### Adding a New CLI Command
+
+1. **Add to `Commands` enum** in `src/cli/mod.rs`:
+```rust
+MyCommand {
+    /// Optional argument
+    #[arg(long)]
+    my_arg: Option<String>,
+},
+```
+
+2. **Add handler** in `run()` method:
+```rust
+Commands::MyCommand { my_arg } => {
+    commands::my_command::run_my_command(self.config.as_deref(), my_arg).await
+}
+```
+
+3. **Create handler file** in `src/cli/commands/my_command.rs`:
+```rust
+use crate::cli::{load_config, print_banner};
+use console::style;
+
+pub fn run_my_command(config_path: Option<&str>, my_arg: Option<String>) -> anyhow::Result<()> {
+    print_banner();
+    let config = load_config(config_path)?;
+    
+    println!("{}", style("My Command").cyan().bold());
+    // ... implementation
+    Ok(())
+}
+```
+
+4. **Export from** `src/cli/commands/mod.rs`:
+```rust
+pub mod my_command;
+```
+
+### Adding Tests
+
+1. **Unit tests** — co-locate with source:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_my_function() {
+        assert_eq!(my_function(), expected);
+    }
+}
+```
+
+2. **Integration tests** — add file in `tests/`:
+```rust
+// tests/my_feature.rs
+use contribai::my_module;
+
+#[test]
+fn test_integration() {
+    // Uses mock GitHub or mock LLM
+}
+```
+
+3. **Run your test**:
+```bash
+cargo test my_feature       # Run specific test file
+cargo test                  # Run all 602 tests
+```
+
+### Adding an Analyzer
+
+1. **Add analysis rule** in `src/analysis/language_rules.rs`
+2. **Extend triage engine** in `src/analysis/triage.rs`
+3. **Add test** in `tests/` with mock LLM responses
+
+### Code Style
+
+- **Async all the way**: Use `async fn` for all I/O
+- **Error handling**: `anyhow::Result` in CLI/handlers, `thiserror` in library code
+- **Naming**: `snake_case` functions, `PascalCase` types
+- **Docs**: `///` on all public items
+- **Line length**: Max 100 chars
+- **Format**: Always `cargo fmt` before committing
+- **Clippy**: Zero warnings allowed (`-D warnings`)
 
 ## 🤖 AI Agent Guide
 
