@@ -298,6 +298,12 @@ enum Commands {
         #[arg(long)]
         yes: bool,
     },
+
+    /// Generate shell completions (bash, zsh, fish, powershell)
+    Completions {
+        /// Shell type: bash, zsh, fish, powershell, elvish
+        shell: clap_complete::Shell,
+    },
 }
 
 impl Cli {
@@ -441,6 +447,7 @@ impl Cli {
             }
             Commands::ConfigList => commands::config::run_config_list(self.config.as_deref()),
             Commands::Undo { yes } => commands::undo::run_undo(self.config.as_deref(), yes),
+            Commands::Completions { shell } => commands::completions::run_completions(shell),
         }
     }
 }

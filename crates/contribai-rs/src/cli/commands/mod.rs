@@ -5,6 +5,7 @@ pub mod cache_clear;
 pub mod cache_stats;
 pub mod circuit_breaker;
 pub mod cleanup;
+pub mod completions;
 pub mod config;
 pub mod doctor;
 pub mod dream;

@@ -1,0 +1,56 @@
+# See https://pre-commit.com for more information
+repos:
+  # Rust formatting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # Rust linting
+  - repo: local
+    hooks:
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # Rust tests (only on lib/test files)
+  - repo: local
+    hooks:
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # Security audit
+  - repo: local
+    hooks:
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # Check for typos in documentation
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.29.0
+    hooks:
+      - id: typos
+        types_or: [rust, markdown]
+        exclude: "^(crates/contribai-rs/tests/fixtures/|target/)"
+
+  # YAML formatting
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shfmt
+      - id: script-must-have-extension

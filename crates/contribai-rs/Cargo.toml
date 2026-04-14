@@ -33,6 +33,7 @@ r2d2_sqlite = "0.24"
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
 
 # Logging / tracing
 tracing = "0.1"
