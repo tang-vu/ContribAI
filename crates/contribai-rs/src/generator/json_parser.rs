@@ -339,7 +339,7 @@ mod tests {
         // Wrong type
         let invalid2 = r#"{"changes": "not an array"}"#;
         let parsed: serde_json::Value = serde_json::from_str(invalid2).unwrap();
-        assert!(!validate_change_schema(&invalid2));
+        assert!(!validate_change_schema(&parsed));
     }
 }
 
