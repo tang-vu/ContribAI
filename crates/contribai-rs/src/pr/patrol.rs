@@ -902,7 +902,7 @@ mod tests {
 
     #[test]
     fn test_parse_classifications() {
-        let feedback = vec![FeedbackItem {
+        let _feedback = vec![FeedbackItem {
             comment_id: 1,
             author: "maintainer".into(),
             body: "Please fix this".into(),
