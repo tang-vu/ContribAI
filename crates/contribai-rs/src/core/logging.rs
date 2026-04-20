@@ -27,9 +27,26 @@ pub fn init_json_logging(level: &str, log_file: Option<&Path>) {
     std::env::set_var("RUST_LOG", level);
 
     if let Some(path) = log_file {
-        if let Some(parent) = path.parent() {
+        let log_dir = dirs::home_dir()
+            .map(|mut d| {
+                d.push(".contribai");
+                d.push("logs");
+                d
+            })
+            .unwrap_or_else(|| Path::new(".").to_path_buf());
+
+        let canonical_path = match std::fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(_) => log_dir.join(path.file_name().unwrap_or_default()),
+        };
+
+        if !canonical_path.starts_with(&log_dir) {
+            return;
+        }
+
+        if let Some(parent) = canonical_path.parent() {
             let _ = create_dir_all(parent);
         }
-        tracing::info!(file = %path.display(), "JSON logging initialized");
+        tracing::info!(file = %canonical_path.display(), "JSON logging initialized");
     }
 }
