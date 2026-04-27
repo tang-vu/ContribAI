@@ -1,4 +1,4 @@
-﻿$Version = "v6.6.0"
+﻿$Version = "v6.7.0"
 $Repo = "tang-vu/ContribAI"
 $Binary = "contribai-windows-x86_64.exe"
 $InstallDir = "$env:USERPROFILE\.contribai\bin"

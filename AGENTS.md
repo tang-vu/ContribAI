@@ -11,7 +11,7 @@ It discovers repos, analyzes code, generates fixes, and submits pull requests �
 **It is NOT** a library/SDK, web app, or CLI tool intended for end-user consumption.
 It is itself an AI agent that operates on other GitHub repositories.
 
-> **v6.6.0 — Primary implementation is Rust** (`crates/contribai-rs/`).
+> **v6.7.0 — Primary implementation is Rust** (`crates/contribai-rs/`).
 > Python code is in `python/` (legacy v4.1.0, kept for reference).
 
 ## Tech Stack
@@ -35,7 +35,7 @@ It is itself an AI agent that operates on other GitHub repositories.
 
 ```
 ContribAI/
-├── crates/contribai-rs/        ← PRIMARY: Rust v6.6.0
+├── crates/contribai-rs/        ← PRIMARY: Rust v6.7.0
 │   ├── src/
 │   │   ├── main.rs             entry point
 │   │   ├── lib.rs              library root
@@ -53,7 +53,7 @@ ContribAI/
 │   │   ├── analysis/
 │   │   │   ├── analyzer.rs     7 analyzers (22 file extensions)
 │   │   │   ├── ast_intel.rs    tree-sitter AST (13 languages)
-│   │   │   ├── skills.rs       17 progressive skills
+│   │   │   ├── skills.rs       27 progressive skills
 │   │   │   └── context_compressor.rs
 │   │   ├── generator/
 │   │   │   ├── engine.rs       code generation
@@ -74,7 +74,7 @@ ContribAI/
 │   │   ├── web/mod.rs          axum dashboard API
 │   │   ├── sandbox/sandbox.rs  Docker + ast fallback
 │   │   └── tools/protocol.rs  tool interface
-│   ├── Cargo.toml              v6.6.0
+│   ├── Cargo.toml              v6.7.0
 │   └── tests/                 418 Rust tests
 │
 ├── python/                     LEGACY Python v4.1.0
@@ -86,7 +86,7 @@ ContribAI/
 └── config.yaml.template        shared config template
 ```
 
-## Architecture (v6.6.0)
+## Architecture (v6.7.0)
 
 ### Core Pipeline
 ```
@@ -97,7 +97,7 @@ CLI → Pipeline → Middleware Chain → Analysis → Generation → PR → CI 
 1. **CLI (40+ commands)** — clap derive + dialoguer menu (`cli/mod.rs`)
 2. **Interactive TUI** — ratatui 4-tab UI: Dashboard/PRs/Repos/Actions (`cli/tui.rs`)
 3. **Middleware Chain** — 5 ordered middlewares (`orchestrator/pipeline.rs`)
-4. **Progressive Skills** — 17 analysis skills loaded on-demand (`analysis/skills.rs`)
+4. **Progressive Skills** — 27 analysis skills loaded on-demand (`analysis/skills.rs`)
 5. **Sub-Agent Registry** — 5 agents with parallel execution (`llm/agents.rs`)
 6. **Tool Protocol** — MCP-inspired tool interface (`tools/protocol.rs`)
 7. **Outcome Learning** — Tracks PR outcomes per-repo (`orchestrator/memory.rs`)

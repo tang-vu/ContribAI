@@ -1,6 +1,6 @@
 [package]
 name = "contribai"
-version = "6.6.0"
+version = "6.7.0"
 edition = "2021"
 authors = ["tang-vu <tang.vu@contribai.dev>"]
 description = "AI agent that autonomously contributes to open source projects on GitHub"

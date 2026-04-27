@@ -5,7 +5,7 @@
 **Autonomous AI agent that discovers, analyzes, and submits<br>Pull Requests to open source projects on GitHub.**
 
 [![Rust](https://img.shields.io/badge/Rust-1.75+-f74c00?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Version](https://img.shields.io/badge/v6.6.0-blue?style=for-the-badge&logo=github&logoColor=white)](https://github.com/tang-vu/ContribAI/releases)
+[![Version](https://img.shields.io/badge/v6.7.0-blue?style=for-the-badge&logo=github&logoColor=white)](https://github.com/tang-vu/ContribAI/releases)
 [![License](https://img.shields.io/badge/AGPL--3.0-green?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Tests](https://img.shields.io/badge/602_tests-passing-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#testing)
 [![PRs Merged](https://img.shields.io/badge/10_PRs-merged-blueviolet?style=for-the-badge&logo=git&logoColor=white)](HALL_OF_FAME.md)
@@ -63,7 +63,7 @@ Set it up once. Wake up to merged PRs.
 │  Discovery  │────▶│  Analysis   │────▶│  Generator  │────▶│  PR + CI    │────▶│   Patrol    │
 │             │     │             │     │             │     │             │     │             │
 │ Search repos│     │ 13-lang AST │     │ LLM-powered │     │ Fork, commit│     │ Auto-fix    │
-│ by language │     │ 17 skills   │     │ code gen +  │     │ create PR   │     │ review      │
+│ by language │     │ 27 skills   │     │ code gen +  │     │ create PR   │     │ review      │
 │ and stars   │     │ security,   │     │ self-review │     │ sign CLA    │     │ feedback    │
 │             │     │ quality,    │     │ + scoring   │     │ monitor CI  │     │ & reply     │
 │             │     │ performance │     │             │     │             │     │             │
@@ -144,7 +144,7 @@ See [`config.yaml.template`](config.yaml.template) for all options.
 - Code quality, complexity, dead code
 - Performance bottlenecks
 - Documentation gaps
-- **17 progressive skills** loaded on-demand
+- **27 progressive skills** loaded on-demand
 
 ### 🤖 Multi-LLM Support
 - **Gemini 3.x** (default) — Flash, Pro, Lite tiers
@@ -261,11 +261,11 @@ contribai notify-test                 # Test Slack/Discord/Telegram
 
 ```
 ContribAI/
-├── crates/contribai-rs/src/        ← Rust v6.6.0 (primary)
+├── crates/contribai-rs/src/        ← Rust v6.7.0 (primary)
 │   ├── cli/                        40+ commands + ratatui TUI
 │   ├── core/                       Config, events, error types
 │   ├── github/                     REST v3 + GraphQL client
-│   ├── analysis/                   13-lang AST + 17 skills
+│   ├── analysis/                   13-lang AST + 27 skills
 │   ├── generator/                  LLM code generation + scoring
 │   ├── orchestrator/               Pipeline + SQLite memory (72h TTL)
 │   ├── llm/                        Multi-provider + 5 sub-agents

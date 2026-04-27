@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-04-28
+
+### Added
+- **10 new analysis skills** — coverage went from 17 → **27 skills**, closing major language and framework gaps the analyzer was previously missing:
+  - `csharp_specific` — C#: IDisposable, async void, null-coalescing, LINQ deferred-execution
+  - `ruby_specific` — Ruby: monkey-patching, frozen_string_literal, eval/send injection
+  - `php_specific` — PHP: SQL injection, type juggling, error suppression, deprecated mysql_*
+  - `vue_patterns` — Vue 3: ref vs reactive, v-html XSS, lifecycle ordering
+  - `rails_security` — Rails: mass-assignment, raw `find_by_sql`, CSRF, secret_key_base
+  - `laravel_security` — Laravel: $fillable/$guarded, unprotected routes, DB::raw injection
+  - `spring_security` — Spring/Spring Boot: filter-chain holes, JPA injection, exposed actuators
+  - `dockerfile_security` — Dockerfile: `latest` tag, root user, secrets in layers, missing HEALTHCHECK
+  - `github_actions_security` — Actions: untrusted `${{ github.event.* }}`, pwn-request via pull_request_target, missing permissions scope
+- 8 new unit tests covering the new skills (csharp/ruby+rails/php+laravel/java+spring/vue/dockerfile/actions/no-leak).
+
 ## [6.6.0] - 2026-04-27
 
 ### Added

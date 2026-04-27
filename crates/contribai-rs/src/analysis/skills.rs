@@ -101,6 +101,33 @@ pub fn builtin_skills() -> Vec<AnalysisSkill> {
             frameworks: vec![],
             priority: 3,
         },
+        AnalysisSkill {
+            name: "csharp_specific".into(),
+            description:
+                "C#: IDisposable misuse, async void, null-coalescing pitfalls, LINQ deferred-execution bugs"
+                    .into(),
+            languages: vec!["csharp".into(), "c#".into(), "c_sharp".into()],
+            frameworks: vec![],
+            priority: 3,
+        },
+        AnalysisSkill {
+            name: "ruby_specific".into(),
+            description:
+                "Ruby: monkey-patching risk, frozen_string_literal, block-vs-Proc semantics, eval/send injection"
+                    .into(),
+            languages: vec!["ruby".into()],
+            frameworks: vec![],
+            priority: 3,
+        },
+        AnalysisSkill {
+            name: "php_specific".into(),
+            description:
+                "PHP: SQL injection in raw queries, type juggling (==), error-suppression `@`, deprecated mysql_*"
+                    .into(),
+            languages: vec!["php".into()],
+            frameworks: vec![],
+            priority: 3,
+        },
         // Framework-specific
         AnalysisSkill {
             name: "django_security".into(),
@@ -142,6 +169,60 @@ pub fn builtin_skills() -> Vec<AnalysisSkill> {
             description: "Express.js: middleware order, CORS, helmet, input sanitization".into(),
             languages: vec!["javascript".into(), "typescript".into()],
             frameworks: vec!["express".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "vue_patterns".into(),
+            description:
+                "Vue 3: reactivity (ref vs reactive), v-html XSS, lifecycle ordering, computed/watch misuse"
+                    .into(),
+            languages: vec!["javascript".into(), "typescript".into()],
+            frameworks: vec!["vue".into(), "vuejs".into(), "vue3".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "rails_security".into(),
+            description:
+                "Rails: mass-assignment (strong params), SQL injection via raw `find_by_sql`, CSRF-token gaps, secret_key_base exposure"
+                    .into(),
+            languages: vec!["ruby".into()],
+            frameworks: vec!["rails".into(), "ruby_on_rails".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "laravel_security".into(),
+            description:
+                "Laravel: mass-assignment ($fillable/$guarded), unprotected routes, CSRF middleware bypass, raw DB::raw injection"
+                    .into(),
+            languages: vec!["php".into()],
+            frameworks: vec!["laravel".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "spring_security".into(),
+            description:
+                "Spring/Spring Boot: AuthN/AuthZ filter chain holes, JPA query injection, exposed actuator endpoints, CSRF misconfig"
+                    .into(),
+            languages: vec!["java".into(), "kotlin".into()],
+            frameworks: vec!["spring".into(), "spring_boot".into(), "springboot".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "dockerfile_security".into(),
+            description:
+                "Dockerfile: `latest` tag, running as root, secrets baked into layers, missing HEALTHCHECK, large attack surface"
+                    .into(),
+            languages: vec![],
+            frameworks: vec!["docker".into(), "dockerfile".into()],
+            priority: 4,
+        },
+        AnalysisSkill {
+            name: "github_actions_security".into(),
+            description:
+                "GitHub Actions: untrusted `${{ github.event.* }}` injection, exposed secrets in logs, pwn-request via pull_request_target, missing permissions: scope"
+                    .into(),
+            languages: vec![],
+            frameworks: vec!["github_actions".into(), "actions".into()],
             priority: 4,
         },
         // Additional universal skills
@@ -224,5 +305,80 @@ mod tests {
         for i in 1..skills.len() {
             assert!(skills[i].priority >= skills[i - 1].priority);
         }
+    }
+
+    #[test]
+    fn test_csharp_gets_csharp_skill() {
+        let skills = select_skills("csharp", &HashSet::new());
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"csharp_specific"));
+    }
+
+    #[test]
+    fn test_ruby_with_rails_gets_rails_security() {
+        let mut fw = HashSet::new();
+        fw.insert("rails".to_string());
+        let skills = select_skills("ruby", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"ruby_specific"));
+        assert!(names.contains(&"rails_security"));
+    }
+
+    #[test]
+    fn test_php_with_laravel_gets_laravel_security() {
+        let mut fw = HashSet::new();
+        fw.insert("laravel".to_string());
+        let skills = select_skills("php", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"php_specific"));
+        assert!(names.contains(&"laravel_security"));
+    }
+
+    #[test]
+    fn test_java_with_spring_gets_spring_security() {
+        let mut fw = HashSet::new();
+        fw.insert("spring".to_string());
+        let skills = select_skills("java", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"java_specific"));
+        assert!(names.contains(&"spring_security"));
+    }
+
+    #[test]
+    fn test_vue_loads_vue_patterns() {
+        let mut fw = HashSet::new();
+        fw.insert("vue".to_string());
+        let skills = select_skills("javascript", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"vue_patterns"));
+    }
+
+    #[test]
+    fn test_dockerfile_skill_loads_for_docker_framework_any_lang() {
+        let mut fw = HashSet::new();
+        fw.insert("docker".to_string());
+        // Dockerfile-specific skill should match regardless of "primary" language
+        let skills = select_skills("python", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"dockerfile_security"));
+    }
+
+    #[test]
+    fn test_github_actions_skill_loads_when_detected() {
+        let mut fw = HashSet::new();
+        fw.insert("github_actions".to_string());
+        let skills = select_skills("yaml", &fw);
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"github_actions_security"));
+    }
+
+    #[test]
+    fn test_no_framework_skill_leaks_into_unrelated_language() {
+        // Loading rails_security shouldn't trigger when only Python is detected
+        let skills = select_skills("python", &HashSet::new());
+        let names: Vec<_> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(!names.contains(&"rails_security"));
+        assert!(!names.contains(&"laravel_security"));
+        assert!(!names.contains(&"spring_security"));
     }
 }
