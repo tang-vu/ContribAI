@@ -20,6 +20,7 @@ pub mod models;
 pub mod notify_test;
 pub mod patrol;
 pub mod profile;
+pub mod prs;
 pub mod run;
 pub mod schedule;
 pub mod serve;

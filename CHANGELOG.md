@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] - 2026-04-28
+
+### Added
+- **`contribai prs` command** — list submitted PRs from local memory with status filter:
+  - `--status open|merged|closed|failed|all` (default `all`)
+  - `--limit N` (default 20)
+  - `--json` — emit a JSON array (PR number parsed as int) for piping to `jq`/scripts
+  - Pretty mode color-codes status (green=merged, cyan=open, red=closed, yellow=failed) and renders date / PR# / repo / title / URL.
+  - Complements `stats` (which shows only the last 5) by giving a full filtered view.
+- 4 unit tests on the JSON converter and date trimmer.
+
 ## [6.7.0] - 2026-04-28
 
 ### Added

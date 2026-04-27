@@ -269,6 +269,21 @@ enum Commands {
     /// Run environment diagnostics — check config, auth, LLM, and system health
     Doctor,
 
+    /// List submitted PRs from memory, with status filter
+    Prs {
+        /// Status filter: open, merged, closed, failed, or all
+        #[arg(short, long, default_value = "all")]
+        status: String,
+
+        /// Maximum rows to return
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+
+        /// Emit a JSON array (machine-readable)
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Tail the events log (~/.contribai/events.jsonl)
     Logs {
         /// Number of most recent events to show
@@ -442,6 +457,11 @@ impl Cli {
             Commands::Logs { tail, filter, json } => {
                 commands::logs::run_logs(tail, filter.as_deref(), json)
             }
+            Commands::Prs {
+                status,
+                limit,
+                json,
+            } => commands::prs::run_prs(self.config.as_deref(), &status, limit, json),
             Commands::CircuitBreaker => {
                 commands::circuit_breaker::run_circuit_breaker_status(self.config.as_deref()).await
             }
