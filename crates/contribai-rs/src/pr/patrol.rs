@@ -144,6 +144,7 @@ impl<'a> PrPatrol<'a> {
     }
 
     /// Check a single PR for feedback.
+    #[allow(clippy::collapsible_match)]
     async fn check_single_pr(
         &self,
         owner: &str,
@@ -902,7 +903,7 @@ mod tests {
 
     #[test]
     fn test_parse_classifications() {
-        let feedback = vec![FeedbackItem {
+        let _feedback = vec![FeedbackItem {
             comment_id: 1,
             author: "maintainer".into(),
             body: "Please fix this".into(),

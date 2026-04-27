@@ -637,7 +637,7 @@ fn render_repos(f: &mut Frame, area: Rect, app: &App) {
                 .iter()
                 .filter(|p| &p.repo == r && p.status == "merged")
                 .count();
-            let rate = if total > 0 { merged * 100 / total } else { 0 };
+            let rate = (merged * 100).checked_div(total).unwrap_or(0);
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("  {:<35}", r.chars().take(34).collect::<String>()),

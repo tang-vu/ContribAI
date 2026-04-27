@@ -1,7 +1,7 @@
 ﻿#!/bin/bash
 set -e
 
-VERSION="v5.2.0"
+VERSION="v6.2.0"
 REPO="tang-vu/ContribAI"
 INSTALL_DIR="/usr/local/bin"
 

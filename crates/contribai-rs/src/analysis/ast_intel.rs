@@ -357,6 +357,7 @@ impl AstIntel {
     }
 
     /// Walk AST nodes to extract import targets with source paths.
+    #[allow(clippy::collapsible_match)]
     fn walk_import_nodes(
         node: tree_sitter::Node,
         source: &str,
@@ -742,8 +743,13 @@ impl AstIntel {
                     continue;
                 }
 
-                // Find file B that file A imports from
-                for file_b_path in parsed_files.keys() {
+                // Find file B that file A imports from.
+                // Look in file_imports (not parsed_files) so we can follow chains
+                // even when file B's symbols haven't been parsed.
+                for file_b_path in file_imports.keys() {
+                    if file_b_path == file_a {
+                        continue;
+                    }
                     if !paths_match(&target_a.source_path, file_b_path) {
                         continue;
                     }
