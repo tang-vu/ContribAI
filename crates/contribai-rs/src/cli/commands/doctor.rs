@@ -1,8 +1,30 @@
 //! Handles `Commands::Doctor` — run environment diagnostics.
 
 use console::style;
+use std::time::Duration;
 
 use crate::cli::{create_memory, load_config};
+
+/// Fetch the latest release tag from GitHub. Anonymous, 5s timeout.
+/// Returns the tag name (e.g. "v6.5.0") on success.
+async fn fetch_latest_release() -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent(format!("contribai/{}", contribai::VERSION))
+        .build()?;
+    let resp = client
+        .get("https://api.github.com/repos/tang-vu/ContribAI/releases/latest")
+        .send()
+        .await?
+        .error_for_status()?;
+    let body: serde_json::Value = resp.json().await?;
+    let tag = body
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("no tag_name in response"))?
+        .to_string();
+    Ok(tag)
+}
 
 pub async fn run_doctor(config_path: Option<&str>) -> anyhow::Result<()> {
     println!(
@@ -146,6 +168,30 @@ pub async fn run_doctor(config_path: Option<&str>) -> anyhow::Result<()> {
             print!("  {:.<40} ", "ContribAI version");
             println!("{}", style(format!("v{}", contribai::VERSION)).cyan());
             pass += 1;
+
+            // ── 8. Latest release check ─────────────────────────
+            print!("  {:.<40} ", "Latest GitHub release");
+            match fetch_latest_release().await {
+                Ok(latest) => {
+                    let current = format!("v{}", contribai::VERSION);
+                    if latest == current {
+                        println!("{} ({})", style("✅OK").green(), latest);
+                        pass += 1;
+                    } else {
+                        println!(
+                            "{} (you: {}, latest: {})",
+                            style("⚠️  UPDATE AVAILABLE").yellow(),
+                            current,
+                            style(&latest).cyan()
+                        );
+                        // Update available is informational, not a failure
+                        pass += 1;
+                    }
+                }
+                Err(_) => {
+                    println!("{}", style("⏭️  SKIP (network)").dim());
+                }
+            }
         }
         Err(e) => {
             println!("{} ({})", style("❌FAIL").red(), e);

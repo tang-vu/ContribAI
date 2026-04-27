@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-04-27
+
+### Added
+- `contribai doctor` now checks for newer GitHub releases (anonymous, 5s timeout) and surfaces an "UPDATE AVAILABLE" hint when the installed binary is behind.
+
+### Fixed
+- **Sprint 22.6** — release-blocking issues on `main`:
+  - Compile error in `validate_change_schema` test (`json_parser.rs:342`) — was passing `&&str` instead of `&serde_json::Value` (E0308).
+  - Clippy 1.95 lints under `-D warnings`: `unnecessary_sort_by` (`repo_intel.rs`), `manual_checked_ops` (`tui.rs`), 6 × `collapsible_match` (`ast_intel.rs`, `patrol.rs`).
+  - 4 pre-existing failing tests:
+    - `test_multihop_2hop_resolution` — 2-hop resolver now iterates `file_imports.keys()` instead of `parsed_files.keys()` so chains can follow files whose symbols haven't been parsed.
+    - `test_detect_ai_policy_ban` — function now lowercases input.
+    - `test_detects_ai_ban_llm` / `test_detects_ai_ban_manual_only` — added regex patterns for `(LLM|GPT|...) generated/written code` and `only accept|allow|welcome manual|human contributions`.
+- Removed unused imports & a useless `len() >= 0` comparison in test files.
+
+### Changed
+- Bumped 11 Rust deps (rust-deps group via dependabot #29): `rand 0.8 → 0.10`, `criterion 0.5 → 0.8`, `axum-server 0.7 → 0.8`, `tree-sitter-css 0.23 → 0.25`, `tree-sitter-php 0.23 → 0.24`, plus tokio/clap/uuid/axum patch bumps.
+- Version sync: `Cargo.toml` 6.0.0 → 6.5.0, install scripts v5.2.0 → v6.5.0, README badge → v6.5.0 (caught misalignment between Cargo.toml and the v6.4.1 git tag).
+
+## [6.4.1] - 2026-04-20
+
+### Added
+- **Sprint 22.5** — Anti-spam & maintainer respect (issue #26):
+  - Per-repo and global cooldowns to prevent submitting too many PRs to the same maintainer.
+  - Honors maintainer signals (e.g. `no-ai-contrib` topic, ban phrases in CONTRIBUTING.md) before opening PRs.
+  - Memory-backed tracking of recently-targeted repos.
+
+## [6.4.0] - 2026-04-17
+
+### Added
+- **Sprint 22** — LLM Generation improvements:
+  - Better prompt scaffolding for code-change generation.
+  - Improved JSON schema validation for LLM responses (`validate_change_schema`).
+  - Self-review and scoring tightened to reduce low-quality PRs.
+
+## [6.3.0] - 2026-04-15
+
+### Added
+- **Sprint 20** — Developer Experience improvements:
+  - Cleaner CLI help, additional config validation, better doctor output.
+- **Sprint 21** — Multi-hop import resolution:
+  - AST analyzer follows import chains across files (A → B → C) to surface relevant symbols when parsing the immediate import target isn't enough.
+
+## [6.2.1] - 2026-04-12
+
+### Documentation
+- **Sprint 19** — Documentation refresh:
+  - 19.1 — CHANGELOG/README/AGENTS version refs synced.
+  - 19.2 — Roadmap updated with v6.1.0/v6.2.0 milestones.
+  - 19.3 — Expanded RUNBOOK.md and CONTRIBUTING.md dev guide.
+
+## [6.2.0] - 2026-04-11
+
+### Added
+- **Sprint 18** — Dependencies, benchmarks, and binary size optimization:
+  - Criterion benchmarks for AST extraction, framework detection, and risk classification (`benches/pipeline.rs`).
+  - Release-profile tuning (LTO, codegen-units, strip) to shrink binary size.
+  - Workspace dep cleanup and minor version bumps.
+
+### Changed
+- Adapted to breaking changes from dependabot #24 (19 Rust deps).
+- CI actions bumped to v5/v6 (dependabot #23).
+
+## [6.1.0] - 2026-04-09
+
+### Added
+- **Sprint 17** — Code quality and framework detection:
+  - Zero clippy warnings under `-D warnings` (at the time of release).
+  - Improved framework detection across Python, JS/TS, Java, Go, Rust ecosystems.
+
 ## [6.0.0] - 2026-04-08
 
 ### Added

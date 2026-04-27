@@ -6,15 +6,13 @@
 //! - Invalid argument type handling
 //! - JSON-RPC request/response format
 
-use contribai::mcp::server::run_stdio_server;
-
 // ── Tool Dispatch Tests ──────────────────────────────────────────────────
 
 #[test]
 fn test_mcp_server_module_exists() {
-    // Verify the MCP server module is accessible
-    // This is a sanity check — if this compiles, the module exists
-    assert!(true);
+    // Verify the MCP server module is accessible at the expected path.
+    // If the symbol is renamed/removed, this test stops compiling.
+    let _ = contribai::mcp::server::run_stdio_server;
 }
 
 #[test]

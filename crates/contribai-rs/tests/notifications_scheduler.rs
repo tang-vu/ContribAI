@@ -76,15 +76,13 @@ fn test_telegram_webhook_url_format() {
 
 #[test]
 fn test_hmac_signature_verification() {
-    use contribai::core::models::Repository;
-
     // Simulate HMAC-SHA256 webhook signature verification
     let secret = "test_secret";
     let payload = r#"{"action":"opened","issue":{"number":42}}"#;
 
     // Compute expected signature
     use hmac::{Hmac, Mac};
-    use sha2::{Digest, Sha256};
+    use sha2::Sha256;
 
     type HmacSha256 = Hmac<Sha256>;
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();

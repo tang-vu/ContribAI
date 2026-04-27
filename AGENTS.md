@@ -11,7 +11,7 @@ It discovers repos, analyzes code, generates fixes, and submits pull requests �
 **It is NOT** a library/SDK, web app, or CLI tool intended for end-user consumption.
 It is itself an AI agent that operates on other GitHub repositories.
 
-> **v6.2.0 — Primary implementation is Rust** (`crates/contribai-rs/`).
+> **v6.5.0 — Primary implementation is Rust** (`crates/contribai-rs/`).
 > Python code is in `python/` (legacy v4.1.0, kept for reference).
 
 ## Tech Stack
@@ -35,7 +35,7 @@ It is itself an AI agent that operates on other GitHub repositories.
 
 ```
 ContribAI/
-├── crates/contribai-rs/        ← PRIMARY: Rust v6.2.0
+├── crates/contribai-rs/        ← PRIMARY: Rust v6.5.0
 │   ├── src/
 │   │   ├── main.rs             entry point
 │   │   ├── lib.rs              library root
@@ -74,7 +74,7 @@ ContribAI/
 │   │   ├── web/mod.rs          axum dashboard API
 │   │   ├── sandbox/sandbox.rs  Docker + ast fallback
 │   │   └── tools/protocol.rs  tool interface
-│   ├── Cargo.toml              v6.2.0
+│   ├── Cargo.toml              v6.5.0
 │   └── tests/                 418 Rust tests
 │
 ├── python/                     LEGACY Python v4.1.0
@@ -86,7 +86,7 @@ ContribAI/
 └── config.yaml.template        shared config template
 ```
 
-## Architecture (v6.2.0)
+## Architecture (v6.5.0)
 
 ### Core Pipeline
 ```

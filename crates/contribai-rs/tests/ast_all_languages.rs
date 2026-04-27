@@ -739,10 +739,7 @@ class KotlinClass {
 }
 "#;
     let kt_symbols = extract_symbols(kt, "Test.kt");
-    // Kotlin may not extract perfectly with Java parser — just verify it doesn't crash
-    assert!(
-        kt_symbols.len() >= 0,
-        "Kotlin should parse without error: {:?}",
-        kt_symbols
-    );
+    // Kotlin may not extract perfectly with Java parser — just verify it doesn't crash.
+    // .len() is usize so always >= 0; the call itself is what we're verifying.
+    let _ = kt_symbols;
 }
