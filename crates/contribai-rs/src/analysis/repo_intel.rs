@@ -278,7 +278,7 @@ impl<'a> RepoIntelligence<'a> {
             }
         }
 
-        actionable.sort_by(|a, b| b.score.cmp(&a.score));
+        actionable.sort_by_key(|b| std::cmp::Reverse(b.score));
         Ok(actionable.into_iter().take(10).collect())
     }
 }

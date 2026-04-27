@@ -350,6 +350,10 @@ pub fn detects_ai_ban(guidelines: &str) -> bool {
         r"no\s+(machine|automated|scripted|generated)\s+contributions?",
         r"(contributions?|pr[s]?)\s+must\s+be\s+(written|made|done)\s+by\s+humans?",
         r"no\s+(llm|gpt|claude|copilot|gemini)\s+(contrib|pr|generated|code)",
+        // Catches "GPT generated code", "LLM-written code", etc. without requiring "no" prefix
+        r"\b(llm|gpt|claude|copilot|gemini)[-\s]+(generated|written|created)\s+(code|contributions?|pr[s]?)",
+        // Catches "only accept manual contributions" / "only allow human PRs"
+        r"only\s+(accept|allow|welcome|approve)\s+(manual|human|hand[-\s]?written)",
     ];
 
     for pattern in &patterns {
@@ -367,6 +371,7 @@ pub fn detects_ai_ban(guidelines: &str) -> bool {
 
 /// Check AI_POLICY.md content for ban keywords.
 fn detect_ai_policy_ban(text: &str) -> bool {
+    let lowered = text.to_lowercase();
     let ban_phrases = [
         "ai contributions are not allowed",
         "automated contributions prohibited",
@@ -375,7 +380,7 @@ fn detect_ai_policy_ban(text: &str) -> bool {
     ];
 
     for phrase in &ban_phrases {
-        if text.contains(phrase) {
+        if lowered.contains(phrase) {
             return true;
         }
     }
