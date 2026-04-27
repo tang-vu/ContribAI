@@ -14,6 +14,7 @@ pub mod hunt;
 pub mod init;
 pub mod leaderboard;
 pub mod login;
+pub mod logs;
 pub mod mcp_server;
 pub mod models;
 pub mod notify_test;

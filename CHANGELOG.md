@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-04-27
+
+### Added
+- **`contribai logs` command** — tail `~/.contribai/events.jsonl` from the CLI:
+  - `--tail N` — show the last N events (default 20). Streams the file with a ring buffer so huge logs don't blow up memory.
+  - `--filter <substring>` — case-insensitive filter on event type (e.g. `pr`, `hunt`, `error`, `complete`).
+  - `--json` — emit one raw JSON object per line for piping into `jq`/scripts.
+  - Pretty mode color-codes events by lifecycle stage (cyan=start, green=complete/merged, red=error) and renders the `data` map as compact `key=value` pairs with long strings truncated.
+  - Skips and reports unparseable lines instead of failing the whole command.
+
 ## [6.5.0] - 2026-04-27
 
 ### Added

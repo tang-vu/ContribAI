@@ -269,6 +269,21 @@ enum Commands {
     /// Run environment diagnostics — check config, auth, LLM, and system health
     Doctor,
 
+    /// Tail the events log (~/.contribai/events.jsonl)
+    Logs {
+        /// Number of most recent events to show
+        #[arg(short, long, default_value = "20")]
+        tail: usize,
+
+        /// Filter by event type substring (case-insensitive, e.g. "pr", "hunt", "error")
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Emit one raw JSON object per line (machine-readable)
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Check circuit breaker status — shows LLM failure state and cooldown
     CircuitBreaker,
 
@@ -424,6 +439,9 @@ impl Cli {
             }
             Commands::Dream { force } => commands::dream::run_dream(self.config.as_deref(), force),
             Commands::Doctor => commands::doctor::run_doctor(self.config.as_deref()).await,
+            Commands::Logs { tail, filter, json } => {
+                commands::logs::run_logs(tail, filter.as_deref(), json)
+            }
             Commands::CircuitBreaker => {
                 commands::circuit_breaker::run_circuit_breaker_status(self.config.as_deref()).await
             }
