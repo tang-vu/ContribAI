@@ -81,7 +81,7 @@ jobs:
           echo "notes_file=/tmp/release_notes.md" >> $GITHUB_OUTPUT
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: contribai-${{ github.ref_name }}-${{ matrix.suffix }}
           body_path: ${{ steps.notes.outputs.notes_file }}
@@ -121,7 +121,7 @@ jobs:
           echo "notes_file=/tmp/release_notes.md" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           body_path: ${{ steps.changelog.outputs.notes_file }}
