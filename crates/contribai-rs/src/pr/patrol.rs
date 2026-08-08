@@ -541,7 +541,7 @@ impl<'a> PrPatrol<'a> {
                 .ok();
             let commit_msg = format!(
                 "fix: address review feedback — {}",
-                &feedback.body.chars().take(60).collect::<String>()
+                feedback.body.chars().take(60).collect::<String>()
             );
 
             let signoff = self.user.as_ref().and_then(PrPatrol::build_signoff);
@@ -609,7 +609,7 @@ impl<'a> PrPatrol<'a> {
              Question from @{}:\n> {}\n\n\
              Write a concise, helpful reply (2-4 sentences).",
             pr_title,
-            &pr_body.chars().take(2000).collect::<String>(),
+            pr_body.chars().take(2000).collect::<String>(),
             feedback.author,
             feedback.body
         );
