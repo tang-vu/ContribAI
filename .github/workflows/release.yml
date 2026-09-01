@@ -37,7 +37,7 @@ jobs:
       attestations: write
     steps:
       - name: Checkout tagged source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Rust stable
@@ -45,7 +45,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Cache Cargo
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -78,7 +78,7 @@ jobs:
         with:
           subject-path: contribai-${{ github.ref_name }}-${{ matrix.asset }}
       - name: Publish GitHub release asset
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           generate_release_notes: true
           fail_on_unmatched_files: true
@@ -99,7 +99,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout tagged source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install and exercise release (Unix)
