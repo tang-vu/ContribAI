@@ -46,7 +46,7 @@ thiserror = "2"
 
 # AST Analysis (13 languages)
 # Note: tree-sitter core 0.24, grammars still at 0.23 (0.24/0.25 rolling out gradually)
-tree-sitter = "0.26"
+tree-sitter = "0.27"
 tree-sitter-python = "0.25"
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
@@ -66,7 +66,7 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 url = "2"
-base64 = "0.22"
+base64 = "0.23"
 dirs = "6"
 glob = "0.3"
 futures = "0.3"
@@ -79,7 +79,7 @@ fd-lock = "4.0"
 # Web server (dashboard API) — gated behind `web` feature
 axum = { version = "0.8", features = ["json", "query"], optional = true }
 tower = { version = "0.5", optional = true }
-tower-http = { version = "0.6", features = ["cors", "trace"], optional = true }
+tower-http = { version = "0.7", features = ["cors", "trace"], optional = true }
 axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 
 # HMAC-SHA256 for webhook signature verification
@@ -105,7 +105,7 @@ web = ["dep:axum", "dep:tower", "dep:tower-http", "dep:axum-server"]
 tui = ["dep:ratatui", "dep:crossterm"]
 
 [dev-dependencies]
-mockall = "0.14"
+mockall = "0.15"
 tempfile = "3"
 wiremock = "0.6"
 tokio-test = "0.4"
