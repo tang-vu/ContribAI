@@ -145,6 +145,50 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh release edit "$RELEASE_TAG" --draft=false --latest
 
+  image:
+    name: Publish container image
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build container image
+        env:
+          GHCR_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          image="$(echo "$GHCR_REPO" | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_NAME=$image" >> "$GITHUB_ENV"
+          docker build -t "$image:${GITHUB_REF_NAME}" -t "$image:latest" .
+      - name: Smoke-test exact release image
+        run: |
+          test "$(docker run --rm "$IMAGE_NAME:$GITHUB_REF_NAME" --version)" = "contribai ${GITHUB_REF_NAME#v}"
+          docker run --rm "$IMAGE_NAME:$GITHUB_REF_NAME" demo --json > demo.json
+          node -e 'const r=JSON.parse(require("fs").readFileSync("demo.json","utf8"));if(r.external_writes_enabled||r.submission!=="not_attempted"||!r.candidate.evidence_valid||r.protected_path_probe.admission_allowed)process.exit(1)'
+      - name: Push image to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE_NAME:$GITHUB_REF_NAME"
+          docker push "$IMAGE_NAME:latest"
+      - name: Resolve pushed image digest
+        id: digest
+        run: |
+          digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$IMAGE_NAME:$GITHUB_REF_NAME" | cut -d@ -f2)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Attest image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
   installer-smoke:
     name: Installer smoke (${{ matrix.os }})
     needs: release

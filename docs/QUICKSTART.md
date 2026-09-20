@@ -5,7 +5,12 @@ GitHub token, or allow any network request. It does not generate or publish a co
 
 ## Minute 1: install or build
 
-Use a release installer:
+Use the published container image — a container runtime is the only requirement,
+and the demo inside needs no configuration, token, or network:
+
+    docker run --rm ghcr.io/tang-vu/contribai:latest demo
+
+Or use a release installer:
 
     curl -fsSL https://raw.githubusercontent.com/tang-vu/ContribAI/main/install.sh | bash
 
@@ -90,6 +95,11 @@ Neither command grants submission capability. A real draft proposal additionally
 evidence, and interactive human review.
 
 ## Installation options
+
+The container image published with each release is the lowest-friction path:
+`docker run --rm ghcr.io/tang-vu/contribai:latest demo`. Pin a version with the
+release tag (`ghcr.io/tang-vu/contribai:v6.10.0`), or build locally with
+`docker build -t contribai:local .` — neither path needs a Rust toolchain.
 
 Installers select GitHub's latest published stable release, independently of the version on `main`.
 Linux and macOS require Bash, curl, and either sha256sum or shasum. Windows supports Windows
