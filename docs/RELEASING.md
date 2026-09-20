@@ -51,9 +51,19 @@ existing published tag to different source. The [release workflow](../.github/wo
 4. Requires all builds to succeed, verifies exactly eight staged files and their checksums, and
    generates GitHub artifact attestations.
 5. Uploads to a draft GitHub Release, then publishes only after uploads succeed.
-6. Installs the published release on all four platforms and verifies its version and safety demo.
+6. Builds the locked Dockerfile, smoke-tests the exact image's version and offline safety
+   demo, then pushes it to `ghcr.io/tang-vu/contribai` tagged with the release version and
+   `latest`, and attests the pushed image digest.
+7. Installs the published release on all four platforms and verifies its version and safety demo.
 
-The installer checks run **after publication**. Do not declare the phase complete until they pass.
+The container and installer checks run **after publication**. Do not declare the phase complete
+until they pass.
+
+The first image push creates a private GHCR package. The owner must set the `contribai`
+package's visibility to public once (package settings under the owner's GitHub profile) or
+external users cannot pull the image. The Dockerfile's `org.opencontainers.image.source`
+label already links the package to this repository.
+
 Copy the relevant changelog entry into the release notes and include the exact validation evidence
 and any remaining limitations. Record the tag, commit SHA, workflow URL, and publication result.
 

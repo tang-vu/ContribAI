@@ -139,7 +139,15 @@ pub fn scrub_environment(extra_passthrough: &[String]) -> HashMap<String, String
         if is_secret_name(&key) {
             continue;
         }
-        if ENV_ALLOWLIST.contains(&key.as_str()) || extra_passthrough.contains(&key) {
+        // Environment variable names are case-insensitive on Windows: the OS
+        // reports PATH as `Path`, so the allowlist match must be
+        // case-insensitive and the canonical spelling kept for the child.
+        if let Some(allow) = ENV_ALLOWLIST
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(&key))
+        {
+            env.insert((*allow).to_string(), value);
+        } else if extra_passthrough.contains(&key) {
             env.insert(key, value);
         }
     }
@@ -294,6 +302,10 @@ impl BoundedRunner {
             .current_dir(&self.workspace_root)
             .env_clear()
             .envs(&env)
+            // Bytecode caches must never outlive a single command: a rewrite
+            // that lands in the same mtime second with the same byte length
+            // would otherwise validate stale compiled sources.
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
@@ -464,5 +476,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(outcome.gate, "forbidden");
+    }
+
+    /// A `__pycache__` left behind by one check could shadow a same-second,
+    /// same-length source rewrite in the next — spawned commands must not
+    /// persist bytecode caches into the workspace.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn python_checks_never_leave_bytecode_caches() {
+        if std::process::Command::new("python")
+            .args(["-m", "pytest", "--version"])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(true)
+        {
+            return; // python+pytest not installed — nothing to assert
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+        std::fs::write(dir.path().join("app.py"), b"def f():\n    return 1\n").unwrap();
+        std::fs::write(
+            dir.path().join("tests/test_app.py"),
+            b"import sys\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nimport app\n\n\ndef test_f():\n    assert app.f() == 1\n",
+        )
+        .unwrap();
+        let runner = BoundedRunner::new(dir.path());
+        let outcome = runner
+            .run(&argv(&["python", "-m", "pytest", "-q"]))
+            .await
+            .unwrap();
+        assert_eq!(outcome.gate, "ran");
+        assert!(outcome.passed(), "{}", outcome.stderr_excerpt);
+        assert!(!dir.path().join("__pycache__").exists());
+        assert!(!dir.path().join("tests/__pycache__").exists());
     }
 }

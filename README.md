@@ -97,6 +97,27 @@ See [the threat model](docs/THREAT_MODEL.md) and
 
 ## Quick start
 
+### Try it in five minutes — no Rust toolchain
+
+Run the published container image. Only a container runtime is needed: no
+install, no configuration, no GitHub token, no LLM key, and no writes:
+
+```bash
+docker run --rm ghcr.io/tang-vu/contribai:latest demo
+docker run --rm ghcr.io/tang-vu/contribai:latest demo --json
+```
+
+Each release publishes the image only after it passes the same offline safety
+demo that gates the release binaries. To build it from a checkout instead — still
+no Rust toolchain:
+
+```bash
+git clone https://github.com/tang-vu/ContribAI.git
+cd ContribAI
+docker build -t contribai:local .
+docker run --rm contribai:local demo
+```
+
 ### Install a release
 
 ```bash
