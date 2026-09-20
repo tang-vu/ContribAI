@@ -139,7 +139,15 @@ pub fn scrub_environment(extra_passthrough: &[String]) -> HashMap<String, String
         if is_secret_name(&key) {
             continue;
         }
-        if ENV_ALLOWLIST.contains(&key.as_str()) || extra_passthrough.contains(&key) {
+        // Environment variable names are case-insensitive on Windows: the OS
+        // reports PATH as `Path`, so the allowlist match must be
+        // case-insensitive and the canonical spelling kept for the child.
+        if let Some(allow) = ENV_ALLOWLIST
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(&key))
+        {
+            env.insert((*allow).to_string(), value);
+        } else if extra_passthrough.contains(&key) {
             env.insert(key, value);
         }
     }
