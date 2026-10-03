@@ -72,7 +72,10 @@ Health checks prove server liveness, not valid credentials, repository consent, 
 
 Use the repository [Dockerfile](../Dockerfile) and [Compose file](../docker-compose.yml). They build
 the locked Rust workspace, run as an unprivileged user, mount configuration read-only, and persist
-application state in the named `contribai-data` volume.
+application state in the named `contribai-data` volume. Releases also publish the same verified
+image to `ghcr.io/tang-vu/contribai` (`:<version>` and `:latest`), for example
+`docker run --rm ghcr.io/tang-vu/contribai:latest demo`; point the Compose `image` at a pinned tag
+instead of `build:` to skip the local build.
 
 Create `config.yaml` first. Set `CONTRIBAI_WEB_API_KEY` in the Compose environment: the container
 binds to `0.0.0.0` internally even though the published host port is restricted to localhost.
