@@ -9,8 +9,11 @@
 //! stripped so a poisoned repository script cannot exfiltrate them, and only
 //! a conservative allowlist passes through.
 //!
-//! The deadline covers both direct-child exit and output capture. Cleanup of
-//! the direct child has a bounded grace period; descendant processes are not
+//! The deadline bounds the runner future, including direct-child exit and
+//! async output capture, with a bounded direct-child cleanup grace period.
+//! It is not a host-process shutdown bound: on Windows, Tokio's underlying
+//! blocking pipe reads can survive async cancellation and delay runtime
+//! shutdown until inherited writers close. Descendant processes are not
 //! sandboxed or terminated as a group by this runner.
 
 use std::collections::HashMap;
@@ -319,8 +322,9 @@ impl BoundedRunner {
         // Drain both pipes concurrently, including bytes beyond the capture
         // cap. Closing a pipe at the cap can turn successful verbose checks
         // into BrokenPipe failures. Keep these futures scoped to this call:
-        // timeout, I/O failure, and cancellation drop their handles instead
-        // of leaving detached reader tasks behind.
+        // timeout, I/O failure, and cancellation drop their async handles
+        // instead of detaching our reader futures. Windows can still retain
+        // underlying blocking reads until EOF; see the module-level limit.
         let execution = tokio::time::timeout_at(deadline.into(), async {
             tokio::try_join!(
                 child.wait(),
@@ -514,6 +518,26 @@ mod bounded_io_regressions {
     use std::sync::Arc;
     use std::task::{Context, Poll};
 
+    const CALL_WALL_CLOCK_BOUND: Duration = Duration::from_secs(3);
+    const PROCESS_PROBE_BACKSTOP: Duration = Duration::from_secs(15);
+    const PROCESS_PROBE_REAP_GRACE: Duration = Duration::from_secs(2);
+    const PROCESS_PROBE_FILE: &str = "runner-runtime-probe.json";
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct RuntimeProbe {
+        call_return_ms: u64,
+        runtime_drop_ms: Option<u64>,
+        outcome: CommandOutcome,
+    }
+
+    fn assert_call_returned_promptly(start: Instant) {
+        assert!(
+            start.elapsed() < CALL_WALL_CLOCK_BOUND,
+            "runner call exceeded its wall-clock bound: {:?}",
+            start.elapsed()
+        );
+    }
+
     #[tokio::test]
     async fn drains_past_capture_limit_without_growing_evidence() {
         let bytes = vec![b'x'; MAX_OUTPUT_BYTES * 4];
@@ -628,6 +652,103 @@ mod bounded_io_regressions {
         drop(child);
     }
 
+    #[test]
+    #[ignore]
+    fn regression_helper_observe_runtime_shutdown() {
+        // A real helper process separates the runner result from the later
+        // destruction of its Tokio runtime. The parent supplies an isolated
+        // working directory and an independent process-exit backstop.
+        let root = std::env::current_dir().unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let runner = BoundedRunner::new(&root)
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(1));
+        let args = helper_argv("regression_helper_exit_with_pipe_holder");
+        let call_start = Instant::now();
+        let outcome = runtime.block_on(runner.run(&args)).unwrap();
+        let mut probe = RuntimeProbe {
+            call_return_ms: call_start.elapsed().as_millis() as u64,
+            runtime_drop_ms: None,
+            outcome,
+        };
+        let record = root.join(PROCESS_PROBE_FILE);
+        // This first record survives even if runtime destruction stalls.
+        std::fs::write(&record, serde_json::to_vec(&probe).unwrap()).unwrap();
+        let drop_start = Instant::now();
+        drop(runtime);
+        probe.runtime_drop_ms = Some(drop_start.elapsed().as_millis() as u64);
+        std::fs::write(&record, serde_json::to_vec(&probe).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn records_call_return_and_host_shutdown_separately() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = helper_argv("regression_helper_observe_runtime_shutdown");
+        let process_start = Instant::now();
+        let mut child = std::process::Command::new(&args[0])
+            .args(&args[1..])
+            .current_dir(dir.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if process_start.elapsed() >= PROCESS_PROBE_BACKSTOP {
+                let kill_result = child.kill();
+                let reap_start = Instant::now();
+                let reap_result = loop {
+                    match child.try_wait() {
+                        Ok(Some(status)) => break format!("reaped: {status}"),
+                        Err(error) => break format!("reap error: {error}"),
+                        Ok(None) if reap_start.elapsed() >= PROCESS_PROBE_REAP_GRACE => {
+                            break "reap grace expired".to_string();
+                        }
+                        Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                    }
+                };
+                let record = std::fs::read_to_string(dir.path().join(PROCESS_PROBE_FILE));
+                panic!(
+                    "finite runtime probe did not exit; kill: {kill_result:?}; \
+                     {reap_result}; last observation: {record:?}"
+                );
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(status.success(), "runtime probe failed: {status}");
+        let probe: RuntimeProbe =
+            serde_json::from_slice(&std::fs::read(dir.path().join(PROCESS_PROBE_FILE)).unwrap())
+                .unwrap();
+        let process_ms = process_start.elapsed().as_millis();
+        // Direct stderr preserves these bounded timing facts in normal CI
+        // logs even when the test harness captures successful println output.
+        writeln!(
+            std::io::stderr().lock(),
+            "runner runtime probe: return={}ms, runtime drop={:?}ms, host exit={}ms",
+            probe.call_return_ms,
+            probe.runtime_drop_ms,
+            process_ms
+        )
+        .unwrap();
+        assert!(probe.outcome.timed_out);
+        assert!(!probe.outcome.passed());
+        assert_eq!(probe.outcome.gate, "ran");
+        assert!(probe.call_return_ms < CALL_WALL_CLOCK_BOUND.as_millis() as u64);
+        assert!(probe.runtime_drop_ms.is_some());
+        // Unix async pipes release on cancellation. Windows blocking pipe
+        // reads may live until the finite descendant exits; only call return
+        // is promised there, not a hard runtime/process shutdown deadline.
+        #[cfg(unix)]
+        assert!(process_start.elapsed() < Duration::from_secs(4));
+    }
+
     #[tokio::test]
     async fn capture_limit_does_not_fail_a_successful_noisy_command() {
         let dir = tempfile::tempdir().unwrap();
@@ -655,10 +776,12 @@ mod bounded_io_regressions {
             .with_approval_commands(true)
             .with_default_timeout(Duration::from_secs(1));
         let args = helper_argv("regression_helper_exit_with_pipe_holder");
+        let call_start = Instant::now();
         let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
             .await
             .expect("readers must not hang after the direct child exits")
             .expect("controlled helper should spawn");
+        assert_call_returned_promptly(call_start);
         // Any deadline hit in execution/capture must produce non-passing
         // evidence. A fix that cancels a lingering reader cannot silently
         // certify the direct child's zero exit code as complete execution.
@@ -679,10 +802,12 @@ mod bounded_io_regressions {
             .with_default_timeout(Duration::from_secs(30))
             .with_run_deadline(Instant::now() + Duration::from_secs(1));
         let args = helper_argv("regression_helper_exit_with_pipe_holder");
+        let call_start = Instant::now();
         let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
             .await
             .expect("capture must honor the earlier overall run deadline")
             .expect("controlled helper should spawn");
+        assert_call_returned_promptly(call_start);
         assert!(!outcome.passed(), "expired run became passing evidence");
         assert!(outcome.timed_out);
         assert_eq!(outcome.gate, "ran");
