@@ -97,6 +97,18 @@ present `admission_scope` policy check. Commands are classified before execution
 commands run, `RequiresApproval` commands run only when `run.allow_approval_commands` is set,
 `Forbidden` commands never run. Missing or failed checks fail closed.
 
+The command deadline bounds the runner's async call, including direct-child execution and
+stdout/stderr capture; the earlier whole-run deadline takes precedence. Output is drained to EOF
+while retaining at most 64 KiB per stream, so verbose checks do not fail just because their captured
+evidence is capped. A timeout or capture error cannot count as a passing check. Direct-child cleanup
+has a one-second bounded grace period.
+
+This is not a hard CLI-process shutdown deadline. On Windows, Tokio uses blocking pipe reads that
+can survive cancellation of their async wrapper. A descendant retaining stdout/stderr can therefore
+delay Tokio runtime destruction and CLI exit after the runner has returned a timeout. The runner
+does not terminate descendant processes as a group and is not an OS sandbox; use an appropriate
+isolated execution environment for untrusted code.
+
 ### Challenge and repair
 
 An independent challenger model reviews the candidate and produces a structured verdict.
