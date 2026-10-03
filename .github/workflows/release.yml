@@ -55,6 +55,12 @@ jobs:
         run: |
           crate_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' crates/contribai-rs/Cargo.toml | head -1)
           test "v${crate_version}" = "${GITHUB_REF_NAME}"
+      - name: Install pytest for e2e fixtures
+        shell: bash
+        run: |
+          python -m pytest --version >/dev/null 2>&1 || \
+            python -m pip install --user pytest || \
+            python -m pip install --user --break-system-packages pytest
       - name: Test tagged source
         run: cargo test --workspace --locked
       - name: Check installer contract

@@ -59,6 +59,9 @@ existing published tag to different source. The [release workflow](../.github/wo
 The container and installer checks run **after publication**. Do not declare the phase complete
 until they pass.
 
+Each release build installs pytest before running the workspace tests, matching CI. The v7
+Python lifecycle fixtures execute `python -m pytest` and require it on every build runner.
+
 The first image push creates a private GHCR package. The owner must set the `contribai`
 package's visibility to public once (package settings under the owner's GitHub profile) or
 external users cannot pull the image. The Dockerfile's `org.opencontainers.image.source`
