@@ -8,6 +8,10 @@
 //! The environment is scrubbed: secrets (tokens, keys, credentials) are
 //! stripped so a poisoned repository script cannot exfiltrate them, and only
 //! a conservative allowlist passes through.
+//!
+//! The deadline covers both direct-child exit and output capture. Cleanup of
+//! the direct child has a bounded grace period; descendant processes are not
+//! sandboxed or terminated as a group by this runner.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,8 +19,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::{Child, Command};
 
 use crate::core::command_safety::{classify_command, CommandClass};
 use crate::core::error::{ContribError, Result};
@@ -26,6 +30,8 @@ use crate::core::safe_truncate;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// Captured output is bounded — a runaway build cannot exhaust memory.
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
+/// Reaping a killed direct child must not introduce another unbounded wait.
+const CHILD_CLEANUP_GRACE: Duration = Duration::from_secs(1);
 /// Env vars passed to every child process (platform basics + toolchain
 /// discovery). Secrets never pass through regardless of this list.
 const ENV_ALLOWLIST: &[&str] = &[
@@ -177,7 +183,8 @@ pub struct BoundedRunner {
     /// Extra env var names allowed to pass through to the child.
     env_passthrough: Vec<String>,
     default_timeout: Duration,
-    /// Wall-clock deadline for the whole run; commands never outlive it.
+    /// Wall-clock deadline for execution and output capture across the run.
+    /// Direct-child cleanup may additionally use `CHILD_CLEANUP_GRACE`.
     run_deadline: Option<Instant>,
 }
 
@@ -277,14 +284,18 @@ impl BoundedRunner {
             _ => {}
         }
 
+        let now = Instant::now();
         let mut timeout = timeout.unwrap_or(self.default_timeout);
-        if let Some(deadline) = self.run_deadline {
-            let remaining = deadline.saturating_duration_since(Instant::now());
+        if let Some(run_deadline) = self.run_deadline {
+            let remaining = run_deadline.saturating_duration_since(now);
             if remaining.is_zero() {
                 return Ok(gated_outcome(argv, "deadline", "run deadline exceeded"));
             }
             timeout = timeout.min(remaining);
         }
+        let deadline = now
+            .checked_add(timeout)
+            .ok_or_else(|| ContribError::Config("command timeout is too large".into()))?;
 
         let env = scrub_environment(&self.env_passthrough);
         let program = resolve_program(&argv[0], &env);
@@ -302,41 +313,43 @@ impl BoundedRunner {
 
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
-        let stdout_task = tokio::spawn(async move {
-            let mut buf = Vec::with_capacity(4096);
-            let _ = stdout
-                .take(MAX_OUTPUT_BYTES as u64 + 1)
-                .read_to_end(&mut buf)
-                .await;
-            buf
-        });
-        let stderr_task = tokio::spawn(async move {
-            let mut buf = Vec::with_capacity(4096);
-            let _ = stderr
-                .take(MAX_OUTPUT_BYTES as u64 + 1)
-                .read_to_end(&mut buf)
-                .await;
-            buf
-        });
+        let mut stdout_bytes = Vec::with_capacity(4096);
+        let mut stderr_bytes = Vec::with_capacity(4096);
+
+        // Drain both pipes concurrently, including bytes beyond the capture
+        // cap. Closing a pipe at the cap can turn successful verbose checks
+        // into BrokenPipe failures. Keep these futures scoped to this call:
+        // timeout, I/O failure, and cancellation drop their handles instead
+        // of leaving detached reader tasks behind.
+        let execution = tokio::time::timeout_at(deadline.into(), async {
+            tokio::try_join!(
+                child.wait(),
+                drain_output(stdout, &mut stdout_bytes),
+                drain_output(stderr, &mut stderr_bytes),
+            )
+        })
+        .await;
 
         let timed_out;
         let exit_status;
-        match tokio::time::timeout(timeout, child.wait()).await {
-            Ok(Ok(status)) => {
+        match execution {
+            Ok(Ok((status, (), ()))) => {
                 timed_out = false;
                 exit_status = status.code();
             }
             Ok(Err(e)) => {
-                return Err(ContribError::Config(format!("wait {}: {e}", argv[0])));
+                stop_child(&mut child).await;
+                return Err(ContribError::Config(format!(
+                    "execute or capture {}: {e}",
+                    argv[0]
+                )));
             }
             Err(_) => {
                 timed_out = true;
                 exit_status = None;
-                let _ = child.kill().await;
+                stop_child(&mut child).await;
             }
         }
-        let stdout_bytes = stdout_task.await.unwrap_or_default();
-        let stderr_bytes = stderr_task.await.unwrap_or_default();
 
         let mut digest = Sha256::new();
         digest.update(&stdout_bytes);
@@ -355,6 +368,30 @@ impl BoundedRunner {
             output_digest: hex::encode(digest.finalize()),
         })
     }
+}
+
+/// Retain only the evidence prefix, but keep consuming until EOF so the
+/// subprocess can finish normally. Read failures must fail the command closed.
+async fn drain_output(
+    mut reader: impl AsyncRead + Unpin,
+    captured: &mut Vec<u8>,
+) -> std::io::Result<()> {
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let count = reader.read(&mut chunk).await?;
+        if count == 0 {
+            return Ok(());
+        }
+        let keep = count.min(MAX_OUTPUT_BYTES.saturating_sub(captured.len()));
+        captured.extend_from_slice(&chunk[..keep]);
+    }
+}
+
+async fn stop_child(child: &mut Child) {
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(CHILD_CLEANUP_GRACE, child.wait()).await;
+    // kill_on_drop remains the backstop if waiting or cancellation interrupts
+    // cleanup. Tokio may subsequently reap an exited direct child best-effort.
 }
 
 fn gated_outcome(argv: &[String], gate: &str, _reason: &str) -> CommandOutcome {
@@ -464,5 +501,233 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(outcome.gate, "forbidden");
+    }
+}
+
+#[cfg(test)]
+mod bounded_io_regressions {
+    use super::*;
+    use std::io::Write;
+    use std::pin::Pin;
+    use std::process::Stdio;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::task::{Context, Poll};
+
+    #[tokio::test]
+    async fn drains_past_capture_limit_without_growing_evidence() {
+        let bytes = vec![b'x'; MAX_OUTPUT_BYTES * 4];
+        let mut reader = bytes.as_slice();
+        let mut captured = Vec::new();
+        drain_output(&mut reader, &mut captured).await.unwrap();
+        assert!(reader.is_empty(), "excess output must still be consumed");
+        assert_eq!(captured, bytes[..MAX_OUTPUT_BYTES]);
+    }
+
+    struct ProbeReader {
+        dropped: Arc<AtomicBool>,
+        fails: bool,
+    }
+
+    impl AsyncRead for ProbeReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if self.fails {
+                Poll::Ready(Err(std::io::Error::other("fixture read failure")))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    impl Drop for ProbeReader {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn output_read_failure_is_not_silently_accepted() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let reader = ProbeReader {
+            dropped: dropped.clone(),
+            fails: true,
+        };
+        let mut captured = Vec::new();
+        assert!(drain_output(reader, &mut captured).await.is_err());
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn cancelled_capture_drops_its_reader() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let reader = ProbeReader {
+            dropped: dropped.clone(),
+            fails: false,
+        };
+        let mut captured = Vec::new();
+        assert!(tokio::time::timeout(
+            Duration::from_millis(20),
+            drain_output(reader, &mut captured)
+        )
+        .await
+        .is_err());
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    fn helper_argv(name: &str) -> Vec<String> {
+        vec![
+            std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            "--ignored".into(),
+            "--nocapture".into(),
+            "--test-threads=1".into(),
+            name.into(),
+        ]
+    }
+
+    // Ignored in normal test runs. Invoked by exact unique name filtering below.
+    #[test]
+    #[ignore]
+    fn regression_helper_noisy_success() {
+        let block = [b'x'; 4096];
+        for _ in 0..256 {
+            std::io::stdout().lock().write_all(&block).unwrap();
+            std::io::stderr().lock().write_all(&block).unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn regression_helper_hold_inherited_pipes() {
+        // Self-terminating backstop: even a failing baseline leaves no infinite
+        // subprocess. This helper may survive a failed assertion for <= 8 s.
+        std::thread::sleep(Duration::from_secs(8));
+    }
+
+    #[test]
+    #[ignore]
+    // This finite-lived descendant intentionally outlives the fixture parent
+    // to exercise inherited-pipe EOF. There is no infinite background helper.
+    #[allow(clippy::zombie_processes)]
+    fn regression_helper_exit_with_pipe_holder() {
+        let args = helper_argv("regression_helper_hold_inherited_pipes");
+        let child = std::process::Command::new(&args[0])
+            .args(&args[1..])
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        // std::process::Child drop deliberately does not wait or kill.
+        drop(child);
+    }
+
+    #[tokio::test]
+    async fn capture_limit_does_not_fail_a_successful_noisy_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(10));
+        let args = helper_argv("regression_helper_noisy_success");
+        let outcome = tokio::time::timeout(Duration::from_secs(15), runner.run(&args))
+            .await
+            .expect("runner must return within its deadline and cleanup grace")
+            .expect("controlled helper should spawn");
+        assert!(
+            outcome.passed(),
+            "noisy success became failure: {outcome:?}"
+        );
+        assert!(outcome.stdout_excerpt.len() <= 2000);
+        assert!(outcome.stderr_excerpt.len() <= 2000);
+        assert_eq!(outcome.output_digest.len(), 64);
+    }
+
+    #[tokio::test]
+    async fn inherited_pipe_reader_cannot_outlive_command_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(1));
+        let args = helper_argv("regression_helper_exit_with_pipe_holder");
+        let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
+            .await
+            .expect("readers must not hang after the direct child exits")
+            .expect("controlled helper should spawn");
+        // Any deadline hit in execution/capture must produce non-passing
+        // evidence. A fix that cancels a lingering reader cannot silently
+        // certify the direct child's zero exit code as complete execution.
+        assert!(
+            !outcome.passed(),
+            "incomplete execution became passing evidence"
+        );
+        assert!(outcome.timed_out);
+        assert_eq!(outcome.gate, "ran");
+        assert!(outcome.exit_status.is_none());
+    }
+
+    #[tokio::test]
+    async fn inherited_pipe_reader_cannot_outlive_run_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(30))
+            .with_run_deadline(Instant::now() + Duration::from_secs(1));
+        let args = helper_argv("regression_helper_exit_with_pipe_holder");
+        let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
+            .await
+            .expect("capture must honor the earlier overall run deadline")
+            .expect("controlled helper should spawn");
+        assert!(!outcome.passed(), "expired run became passing evidence");
+        assert!(outcome.timed_out);
+        assert_eq!(outcome.gate, "ran");
+        assert!(outcome.exit_status.is_none());
+    }
+
+    #[tokio::test]
+    async fn direct_child_timeout_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_millis(200));
+        let args = helper_argv("regression_helper_hold_inherited_pipes");
+        let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
+            .await
+            .expect("direct-child cleanup must be bounded")
+            .expect("controlled helper should spawn");
+        assert!(outcome.timed_out);
+        assert_eq!(outcome.gate, "ran");
+        assert!(!outcome.passed());
+        assert!(outcome.exit_status.is_none());
+    }
+
+    #[tokio::test]
+    async fn extreme_timeout_is_capped_by_run_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::MAX)
+            .with_run_deadline(Instant::now() + Duration::from_millis(200));
+        let args = helper_argv("regression_helper_hold_inherited_pipes");
+        let outcome = tokio::time::timeout(Duration::from_secs(3), runner.run(&args))
+            .await
+            .expect("finite run deadline must cap an extreme command timeout")
+            .expect("timeout must be clamped before adding it to Instant");
+        assert_eq!(outcome.gate, "ran");
+        assert!(outcome.timed_out);
+        assert!(!outcome.passed());
+    }
+
+    #[tokio::test]
+    async fn unrepresentable_timeout_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path()).with_default_timeout(Duration::MAX);
+        let result = runner.run(&["git".into(), "status".into()]).await;
+        assert!(matches!(result, Err(ContribError::Config(_))));
     }
 }
