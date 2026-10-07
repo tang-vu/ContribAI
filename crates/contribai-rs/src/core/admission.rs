@@ -1618,6 +1618,9 @@ pub fn repository_path_error(path: &str) -> Option<&'static str> {
     if path.starts_with('/') {
         return Some("absolute paths are forbidden");
     }
+    if path.len() >= 2 && path.as_bytes()[1] == b':' && path.as_bytes()[0].is_ascii_alphabetic() {
+        return Some("drive-letter paths are forbidden");
+    }
     if path.contains('\\') {
         return Some("backslash separators are forbidden");
     }
@@ -1900,6 +1903,8 @@ mod tests {
             "../SECURITY.md",
             "src/../.github/workflows/release.yml",
             "/src/lib.rs",
+            "C:/src/lib.rs",
+            "d:lib.rs",
             "src\\lib.rs",
             "src//lib.rs",
             "src/%2e%2e/SECURITY.md",

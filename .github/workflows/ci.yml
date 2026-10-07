@@ -60,6 +60,12 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+      - name: Install pytest for e2e fixtures
+        shell: bash
+        run: |
+          python -m pytest --version >/dev/null 2>&1 || \
+            python -m pip install --user pytest || \
+            python -m pip install --user --break-system-packages pytest
       - name: Run workspace tests
         run: cargo test --workspace --locked
       - name: Build release binary

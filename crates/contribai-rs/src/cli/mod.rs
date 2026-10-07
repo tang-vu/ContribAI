@@ -81,6 +81,53 @@ mod capability_tests {
     }
 
     #[test]
+    fn contribute_submission_capability_is_off_by_default() {
+        let cli = Cli::try_parse_from(["contribai", "contribute", "owner/repo", "--issue", "1"])
+            .expect("valid CLI");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Contribute {
+                dry_run: false,
+                submit: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn contribute_dry_run_parses_without_submit() {
+        let cli = Cli::try_parse_from([
+            "contribai",
+            "contribute",
+            "owner/repo",
+            "--issue",
+            "1",
+            "--dry-run",
+        ])
+        .expect("valid CLI");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Contribute {
+                dry_run: true,
+                submit: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn patrol_response_capability_is_off_by_default() {
+        let cli = Cli::try_parse_from(["contribai", "patrol"]).expect("valid CLI");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Patrol {
+                dry_run: false,
+                respond: false,
+            })
+        ));
+    }
+
+    #[test]
     fn demo_is_offline_and_has_no_write_capability_flag() {
         let cli = Cli::try_parse_from(["contribai", "demo", "--json"]).expect("valid CLI");
         assert!(matches!(
