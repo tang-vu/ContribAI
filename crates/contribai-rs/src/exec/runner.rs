@@ -11,10 +11,10 @@
 //!
 //! The deadline bounds the runner future, including direct-child exit and
 //! async output capture, with a bounded direct-child cleanup grace period.
-//! It is not a host-process shutdown bound: on Windows, Tokio's underlying
-//! blocking pipe reads can survive async cancellation and delay runtime
-//! shutdown until inherited writers close. Descendant processes are not
-//! sandboxed or terminated as a group by this runner.
+//! Output uses cancellable OS pipe reads, including overlapped named pipes on
+//! Windows, so inherited writers cannot keep this runner's reads alive during
+//! runtime shutdown. Descendant processes are not sandboxed or terminated as
+//! a group by this runner.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -303,18 +303,43 @@ impl BoundedRunner {
         let env = scrub_environment(&self.env_passthrough);
         let program = resolve_program(&argv[0], &env);
         let start = Instant::now();
-        let mut child = Command::new(&program)
+        let mut command = Command::new(&program);
+        command
             .args(&argv[1..])
             .current_dir(&self.workspace_root)
             .env_clear()
             .envs(&env)
+            .kill_on_drop(true);
+
+        #[cfg(windows)]
+        let (stdout, stderr) = {
+            let pipes = tokio::time::timeout_at(deadline.into(), async {
+                let stdout = windows_output_pipe().await?;
+                let stderr = windows_output_pipe().await?;
+                Ok::<_, std::io::Error>((stdout, stderr))
+            })
+            .await
+            .map_err(|_| ContribError::Config("output pipe setup deadline exceeded".into()))?
+            .map_err(|e| ContribError::Config(format!("prepare output pipes: {e}")))?;
+            let ((stdout, stdout_writer), (stderr, stderr_writer)) = pipes;
+            command.stdout(stdout_writer).stderr(stderr_writer);
+            (stdout, stderr)
+        };
+        #[cfg(not(windows))]
+        command
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
+            .stderr(std::process::Stdio::piped());
+
+        let mut child = command
             .spawn()
             .map_err(|e| ContribError::Config(format!("spawn {}: {e}", argv[0])))?;
+        // Command retains configured Stdio handles for reuse. Release our
+        // writer copies now, otherwise a successful child can never reach EOF.
+        drop(command);
 
+        #[cfg(not(windows))]
         let stdout = child.stdout.take().expect("piped");
+        #[cfg(not(windows))]
         let stderr = child.stderr.take().expect("piped");
         let mut stdout_bytes = Vec::with_capacity(4096);
         let mut stderr_bytes = Vec::with_capacity(4096);
@@ -323,8 +348,8 @@ impl BoundedRunner {
         // cap. Closing a pipe at the cap can turn successful verbose checks
         // into BrokenPipe failures. Keep these futures scoped to this call:
         // timeout, I/O failure, and cancellation drop their async handles
-        // instead of detaching our reader futures. Windows can still retain
-        // underlying blocking reads until EOF; see the module-level limit.
+        // instead of detaching our reader futures. Windows named-pipe reads
+        // use overlapped I/O rather than Tokio's blocking child-pipe adapter.
         let execution = tokio::time::timeout_at(deadline.into(), async {
             tokio::try_join!(
                 child.wait(),
@@ -372,6 +397,47 @@ impl BoundedRunner {
             output_digest: hex::encode(digest.finalize()),
         })
     }
+}
+
+/// Connect a synchronous child writer to a cancellable, overlapped reader.
+/// Tokio's Windows ChildStdout/ChildStderr instead use blocking reads, which
+/// can delay runtime destruction while a descendant retains a writer.
+#[cfg(windows)]
+async fn windows_output_pipe() -> std::io::Result<(
+    tokio::net::windows::named_pipe::NamedPipeServer,
+    std::process::Stdio,
+)> {
+    let name = format!(r"\\.\pipe\contribai-output-{}", uuid::Uuid::new_v4());
+    let (reader, writer) = windows_output_pipe_named(&name).await?;
+    Ok((reader, writer.into()))
+}
+
+#[cfg(windows)]
+async fn windows_output_pipe_named(
+    name: &str,
+) -> std::io::Result<(
+    tokio::net::windows::named_pipe::NamedPipeServer,
+    std::fs::File,
+)> {
+    use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
+
+    // One inbound-only instance: no other server can claim the name, and a
+    // read-only client cannot observe output. Windows' default pipe DACL
+    // restricts writers to the owner/admins; remote clients are rejected.
+    // Keep the writer synchronous for ordinary child stdout/stderr APIs.
+    let reader = ServerOptions::new()
+        .first_pipe_instance(true)
+        .max_instances(1)
+        .access_inbound(true)
+        .access_outbound(false)
+        .reject_remote_clients(true)
+        .pipe_mode(PipeMode::Byte)
+        .create(name)?;
+    let writer = std::fs::OpenOptions::new().write(true).open(name)?;
+    // Complete the connection while our writer is still alive. Connecting
+    // after spawn races a fast child's exit and can report ERROR_NO_DATA.
+    reader.connect().await?;
+    Ok((reader, writer))
 }
 
 /// Retain only the evidence prefix, but keep consuming until EOF so the
@@ -522,12 +588,19 @@ mod bounded_io_regressions {
     const PROCESS_PROBE_BACKSTOP: Duration = Duration::from_secs(15);
     const PROCESS_PROBE_REAP_GRACE: Duration = Duration::from_secs(2);
     const PROCESS_PROBE_FILE: &str = "runner-runtime-probe.json";
+    const HOLDER_READY: &str = "pipe-holder-ready";
+    const HOLDER_CHECK: &str = "pipe-holder-check";
+    const HOLDER_ALIVE: &str = "pipe-holder-alive";
+    const HOLDER_RELEASE: &str = "pipe-holder-release";
+    const HOLDER_DONE: &str = "pipe-holder-done";
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct RuntimeProbe {
         call_return_ms: u64,
         runtime_drop_ms: Option<u64>,
-        outcome: CommandOutcome,
+        outcome: Option<CommandOutcome>,
+        cancelled: bool,
+        holder_survived_runtime: bool,
     }
 
     fn assert_call_returned_promptly(start: Instant) {
@@ -619,19 +692,86 @@ mod bounded_io_regressions {
     #[test]
     #[ignore]
     fn regression_helper_noisy_success() {
-        let block = [b'x'; 4096];
         for _ in 0..256 {
-            std::io::stdout().lock().write_all(&block).unwrap();
-            std::io::stderr().lock().write_all(&block).unwrap();
+            std::io::stdout().lock().write_all(&[b'x'; 4096]).unwrap();
+            std::io::stderr().lock().write_all(&[b'y'; 4096]).unwrap();
         }
     }
 
     #[test]
     #[ignore]
+    fn regression_helper_quick_success() {
+        std::io::stdout()
+            .lock()
+            .write_all(b"quick stdout\n")
+            .unwrap();
+        std::io::stderr()
+            .lock()
+            .write_all(b"quick stderr\n")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn fast_success_reaches_eof_repeatedly() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(2));
+        let args = helper_argv("regression_helper_quick_success");
+        for _ in 0..16 {
+            let outcome = runner.run(&args).await.unwrap();
+            assert!(outcome.passed(), "fast child failed: {outcome:?}");
+            assert!(outcome.stdout_excerpt.contains("quick stdout"));
+            assert!(outcome.stderr_excerpt.contains("quick stderr"));
+        }
+    }
+
+    #[tokio::test]
+    async fn spawn_failure_does_not_poison_later_capture() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BoundedRunner::new(dir.path())
+            .with_approval_commands(true)
+            .with_default_timeout(Duration::from_secs(2));
+        let missing = vec![dir
+            .path()
+            .join("absent-fixture.exe")
+            .to_string_lossy()
+            .into_owned()];
+        for _ in 0..16 {
+            assert!(runner.run(&missing).await.is_err());
+        }
+        let outcome = runner
+            .run(&helper_argv("regression_helper_quick_success"))
+            .await
+            .unwrap();
+        assert!(outcome.passed());
+    }
+
+    #[test]
+    #[ignore]
     fn regression_helper_hold_inherited_pipes() {
-        // Self-terminating backstop: even a failing baseline leaves no infinite
-        // subprocess. This helper may survive a failed assertion for <= 8 s.
-        std::thread::sleep(Duration::from_secs(8));
+        // Disposable, self-terminating process. File handshakes prove that it
+        // really inherited the pipes and survived cancellation/runtime drop.
+        std::io::stdout()
+            .lock()
+            .write_all(b"holder stdout ready\n")
+            .unwrap();
+        std::io::stderr()
+            .lock()
+            .write_all(b"holder stderr ready\n")
+            .unwrap();
+        std::fs::write(HOLDER_READY, b"ready").unwrap();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(8) {
+            if Path::new(HOLDER_CHECK).exists() {
+                let _ = std::fs::write(HOLDER_ALIVE, b"alive");
+            }
+            if Path::new(HOLDER_RELEASE).exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = std::fs::write(HOLDER_DONE, b"done");
     }
 
     #[test]
@@ -650,11 +790,33 @@ mod bounded_io_regressions {
             .unwrap();
         // std::process::Child drop deliberately does not wait or kill.
         drop(child);
+        wait_for_fixture_file(Path::new(HOLDER_READY));
+    }
+
+    fn wait_for_fixture_file(path: &Path) {
+        let start = Instant::now();
+        while !path.exists() {
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "missing fixture marker: {path:?}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
     #[ignore]
     fn regression_helper_observe_runtime_shutdown() {
+        observe_runtime_shutdown(false);
+    }
+
+    #[test]
+    #[ignore]
+    fn regression_helper_observe_cancelled_runtime() {
+        observe_runtime_shutdown(true);
+    }
+
+    fn observe_runtime_shutdown(cancel: bool) {
         // A real helper process separates the runner result from the later
         // destruction of its Tokio runtime. The parent supplies an isolated
         // working directory and an independent process-exit backstop.
@@ -669,11 +831,41 @@ mod bounded_io_regressions {
             .with_default_timeout(Duration::from_secs(1));
         let args = helper_argv("regression_helper_exit_with_pipe_holder");
         let call_start = Instant::now();
-        let outcome = runtime.block_on(runner.run(&args)).unwrap();
+        let outcome = if cancel {
+            runtime.block_on(async {
+                let call = runner.run(&args);
+                tokio::pin!(call);
+                let ready = async {
+                    while !root.join(HOLDER_READY).exists() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    // Poll real pipe reads before cancellation.
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                };
+                tokio::select! {
+                    result = &mut call => panic!("runner finished before cancellation: {result:?}"),
+                    () = ready => {},
+                }
+                // The pinned runner and its readers are dropped here.
+            });
+            None
+        } else {
+            Some(runtime.block_on(runner.run(&args)).unwrap())
+        };
+        assert!(
+            root.join(HOLDER_READY).exists(),
+            "descendant must actually start"
+        );
+        assert!(
+            !root.join(HOLDER_DONE).exists(),
+            "descendant must still hold its pipes"
+        );
         let mut probe = RuntimeProbe {
             call_return_ms: call_start.elapsed().as_millis() as u64,
             runtime_drop_ms: None,
             outcome,
+            cancelled: cancel,
+            holder_survived_runtime: false,
         };
         let record = root.join(PROCESS_PROBE_FILE);
         // This first record survives even if runtime destruction stalls.
@@ -682,12 +874,33 @@ mod bounded_io_regressions {
         drop(runtime);
         probe.runtime_drop_ms = Some(drop_start.elapsed().as_millis() as u64);
         std::fs::write(&record, serde_json::to_vec(&probe).unwrap()).unwrap();
+        // Ask the live descendant to acknowledge after runtime destruction;
+        // then release only this test's process without sending any signal.
+        std::fs::write(root.join(HOLDER_CHECK), b"check").unwrap();
+        wait_for_fixture_file(&root.join(HOLDER_ALIVE));
+        probe.holder_survived_runtime = true;
+        std::fs::write(&record, serde_json::to_vec(&probe).unwrap()).unwrap();
+        std::fs::write(root.join(HOLDER_RELEASE), b"release").unwrap();
+        wait_for_fixture_file(&root.join(HOLDER_DONE));
     }
 
     #[test]
     fn records_call_return_and_host_shutdown_separately() {
+        assert_host_shutdown(false);
+    }
+
+    #[test]
+    fn cancelled_runner_does_not_delay_host_shutdown() {
+        assert_host_shutdown(true);
+    }
+
+    fn assert_host_shutdown(cancel: bool) {
         let dir = tempfile::tempdir().unwrap();
-        let args = helper_argv("regression_helper_observe_runtime_shutdown");
+        let args = helper_argv(if cancel {
+            "regression_helper_observe_cancelled_runtime"
+        } else {
+            "regression_helper_observe_runtime_shutdown"
+        });
         let process_start = Instant::now();
         let mut child = std::process::Command::new(&args[0])
             .args(&args[1..])
@@ -722,7 +935,11 @@ mod bounded_io_regressions {
             }
             std::thread::sleep(Duration::from_millis(10));
         };
-        assert!(status.success(), "runtime probe failed: {status}");
+        let record = std::fs::read_to_string(dir.path().join(PROCESS_PROBE_FILE));
+        assert!(
+            status.success(),
+            "runtime probe failed: {status}; last observation: {record:?}"
+        );
         let probe: RuntimeProbe =
             serde_json::from_slice(&std::fs::read(dir.path().join(PROCESS_PROBE_FILE)).unwrap())
                 .unwrap();
@@ -731,22 +948,35 @@ mod bounded_io_regressions {
         // logs even when the test harness captures successful println output.
         writeln!(
             std::io::stderr().lock(),
-            "runner runtime probe: return={}ms, runtime drop={:?}ms, host exit={}ms",
+            "runner runtime probe: cancelled={cancel}, return={}ms, runtime drop={:?}ms, host exit={}ms",
             probe.call_return_ms,
             probe.runtime_drop_ms,
             process_ms
         )
         .unwrap();
-        assert!(probe.outcome.timed_out);
-        assert!(!probe.outcome.passed());
-        assert_eq!(probe.outcome.gate, "ran");
+        assert_eq!(probe.cancelled, cancel);
+        assert!(probe.holder_survived_runtime);
+        assert!(
+            dir.path().join(HOLDER_DONE).exists(),
+            "fixture must clean up"
+        );
+        if cancel {
+            assert!(probe.outcome.is_none());
+        } else {
+            let outcome = probe.outcome.unwrap();
+            assert!(outcome.timed_out);
+            assert!(!outcome.passed());
+            assert_eq!(outcome.gate, "ran");
+            assert!(outcome.stdout_excerpt.contains("holder stdout ready"));
+            assert!(outcome.stderr_excerpt.contains("holder stderr ready"));
+        }
         assert!(probe.call_return_ms < CALL_WALL_CLOCK_BOUND.as_millis() as u64);
         assert!(probe.runtime_drop_ms.is_some());
-        // Unix async pipes release on cancellation. Windows blocking pipe
-        // reads may live until the finite descendant exits; only call return
-        // is promised there, not a hard runtime/process shutdown deadline.
-        #[cfg(unix)]
-        assert!(process_start.elapsed() < Duration::from_secs(4));
+        assert!(probe.runtime_drop_ms.unwrap() < 1000);
+        assert!(
+            process_start.elapsed() < Duration::from_secs(4),
+            "inherited writers delayed host shutdown: {process_ms}ms"
+        );
     }
 
     #[tokio::test]
@@ -766,7 +996,24 @@ mod bounded_io_regressions {
         );
         assert!(outcome.stdout_excerpt.len() <= 2000);
         assert!(outcome.stderr_excerpt.len() <= 2000);
-        assert_eq!(outcome.output_digest.len(), 64);
+        // Independently collect the finite helper's complete output to verify
+        // stream separation, prefix truncation and the exact evidence digest.
+        let full = std::process::Command::new(&args[0])
+            .args(&args[1..])
+            .output()
+            .unwrap();
+        assert!(full.status.success());
+        assert!(full.stdout.len() > MAX_OUTPUT_BYTES);
+        assert!(full.stderr.len() > MAX_OUTPUT_BYTES);
+        let mut digest = Sha256::new();
+        digest.update(&full.stdout[..MAX_OUTPUT_BYTES]);
+        digest.update(&full.stderr[..MAX_OUTPUT_BYTES]);
+        assert_eq!(outcome.output_digest, hex::encode(digest.finalize()));
+        assert_eq!(
+            outcome.stdout_excerpt,
+            safe_truncate(&String::from_utf8_lossy(&full.stdout), 2000)
+        );
+        assert_eq!(outcome.stderr_excerpt, "y".repeat(2000));
     }
 
     #[tokio::test]
@@ -854,5 +1101,98 @@ mod bounded_io_regressions {
         let runner = BoundedRunner::new(dir.path()).with_default_timeout(Duration::MAX);
         let result = runner.run(&["git".into(), "status".into()]).await;
         assert!(matches!(result, Err(ContribError::Config(_))));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_pipe_regressions {
+    use super::*;
+    use std::io::Write;
+
+    fn pipe_name() -> String {
+        format!(r"\\.\pipe\contribai-test-{}", uuid::Uuid::new_v4())
+    }
+
+    #[tokio::test]
+    async fn immediate_writer_close_is_clean_eof() {
+        for bytes in [b"".as_slice(), b"short output".as_slice()] {
+            for _ in 0..16 {
+                let (reader, mut writer) = windows_output_pipe_named(&pipe_name()).await.unwrap();
+                writer.write_all(bytes).unwrap();
+                drop(writer);
+                let mut captured = Vec::new();
+                tokio::time::timeout(Duration::from_secs(1), drain_output(reader, &mut captured))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(captured, bytes);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn connected_pipe_rejects_extra_readers_writers_and_servers() {
+        let name = pipe_name();
+        let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
+        assert!(std::fs::OpenOptions::new().read(true).open(&name).is_err());
+        assert!(std::fs::OpenOptions::new().write(true).open(&name).is_err());
+        assert!(windows_output_pipe_named(&name).await.is_err());
+        drop(writer);
+        drop(reader);
+    }
+
+    #[tokio::test]
+    async fn failed_spawn_releases_configured_pipe_handles() {
+        let dir = tempfile::tempdir().unwrap();
+        for _ in 0..16 {
+            let name = pipe_name();
+            let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
+            let mut command = Command::new(dir.path().join("absent-fixture.exe"));
+            command.stdout(writer).stderr(std::process::Stdio::null());
+            assert!(command.spawn().is_err());
+            drop(command);
+            let mut captured = Vec::new();
+            tokio::time::timeout(Duration::from_secs(1), drain_output(reader, &mut captured))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(captured.is_empty());
+            let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
+            drop(writer);
+            drop(reader);
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_reads_release_pipe_instances() {
+        for _ in 0..16 {
+            let name = pipe_name();
+            let (reader, mut writer) = windows_output_pipe_named(&name).await.unwrap();
+            let mut captured = Vec::new();
+            assert!(tokio::time::timeout(
+                Duration::from_millis(10),
+                drain_output(reader, &mut captured)
+            )
+            .await
+            .is_err());
+            // Cancellation owns and drops the OS reader while the writer
+            // stays alive. Yield for completion of the cancelled OS read.
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    if writer.write_all(b"probe").is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            drop(writer);
+            // The same unique name can be reserved again only after the old
+            // server and outstanding operation release their handles.
+            let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
+            drop(writer);
+            drop(reader);
+        }
     }
 }

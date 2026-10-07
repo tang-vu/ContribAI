@@ -103,11 +103,16 @@ while retaining at most 64 KiB per stream, so verbose checks do not fail just be
 evidence is capped. A timeout or capture error cannot count as a passing check. Direct-child cleanup
 has a one-second bounded grace period.
 
-This is not a hard CLI-process shutdown deadline. On Windows, Tokio uses blocking pipe reads that
-can survive cancellation of their async wrapper. A descendant retaining stdout/stderr can therefore
-delay Tokio runtime destruction and CLI exit after the runner has returned a timeout. The runner
-does not terminate descendant processes as a group and is not an OS sandbox; use an appropriate
-isolated execution environment for untrusted code.
+Output capture uses cancellable OS reads on every supported platform. On Windows, private,
+single-instance inbound named pipes use overlapped reads, so a descendant retaining stdout/stderr
+cannot leave a blocking capture task that delays Tokio runtime destruction after timeout or
+cancellation. Each stream has a separate pipe and bounded evidence prefix. The child still writes
+through ordinary synchronous stdout/stderr handles.
+
+The runner only terminates its direct child; descendants may survive and later see a closed output
+pipe. It does not terminate process trees or provide an OS sandbox. This capture guarantee does not
+bound unrelated application shutdown work. Use an appropriate isolated execution environment for
+untrusted code.
 
 ### Challenge and repair
 
