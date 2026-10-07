@@ -1,0 +1,20 @@
+# The Dockerfile compiles only crates/contribai-rs from the locked workspace;
+# keep the build context small and deterministic.
+.git/
+.github/
+.agents/
+.dockerignore
+Dockerfile
+docker-compose.yml
+target/
+**/target/
+node_modules/
+docs/
+examples/
+plans/
+python/
+site/
+scripts/
+*.md
+repomix-output.xml
+app_current.txt

@@ -90,6 +90,12 @@ assert(
   "release uploads must remain draft until all assets are uploaded"
 );
 const buildJob = releaseWorkflow.split("  build:\n")[1]?.split("  release:\n")[0];
+const pytestInstall = buildJob?.indexOf("python -m pip install --user pytest") ?? -1;
+const workspaceTests = buildJob?.indexOf("cargo test --workspace --locked") ?? -1;
+assert(
+  pytestInstall >= 0 && workspaceTests > pytestInstall,
+  "release build jobs must install pytest before running the workspace e2e tests"
+);
 assert(
   buildJob && !buildJob.includes("contents: write") && !buildJob.includes("action-gh-release@"),
   "build jobs must not publish releases or hold repository write permission"
