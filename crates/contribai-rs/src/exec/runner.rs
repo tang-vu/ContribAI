@@ -1113,6 +1113,30 @@ mod windows_pipe_regressions {
         format!(r"\\.\pipe\contribai-test-{}", uuid::Uuid::new_v4())
     }
 
+    async fn assert_pipe_instance_released(name: &str) {
+        // Dropping a pipe cancels its overlapped I/O, but the completion
+        // callback can briefly retain its handle. Give the reactor a chance
+        // to finish that work; a leaked instance must still fail within 1 s.
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                match windows_output_pipe_named(name).await {
+                    Ok((reader, writer)) => {
+                        drop(writer);
+                        drop(reader);
+                        break;
+                    }
+                    Err(error) if error.raw_os_error() == Some(231) => {
+                        // ERROR_PIPE_BUSY: the old instance is still closing.
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    Err(error) => panic!("reopen released pipe: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("pipe cleanup must release its name within one second");
+    }
+
     #[tokio::test]
     async fn immediate_writer_close_is_clean_eof() {
         for bytes in [b"".as_slice(), b"short output".as_slice()] {
@@ -1157,9 +1181,7 @@ mod windows_pipe_regressions {
                 .unwrap()
                 .unwrap();
             assert!(captured.is_empty());
-            let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
-            drop(writer);
-            drop(reader);
+            assert_pipe_instance_released(&name).await;
         }
     }
 
@@ -1190,9 +1212,7 @@ mod windows_pipe_regressions {
             drop(writer);
             // The same unique name can be reserved again only after the old
             // server and outstanding operation release their handles.
-            let (reader, writer) = windows_output_pipe_named(&name).await.unwrap();
-            drop(writer);
-            drop(reader);
+            assert_pipe_instance_released(&name).await;
         }
     }
 }
