@@ -458,7 +458,9 @@ async fn drain_output(
     mut reader: impl AsyncRead + Unpin,
     captured: &mut Vec<u8>,
 ) -> std::io::Result<()> {
-    let mut chunk = [0_u8; 8192];
+    // Keep the bounded scratch buffer on the heap: an inline array becomes
+    // part of every enclosing future and can exhaust the Windows CLI stack.
+    let mut chunk = vec![0_u8; 8192];
     loop {
         let count = reader.read(&mut chunk).await?;
         if count == 0 {
@@ -664,6 +666,28 @@ mod bounded_io_regressions {
         drain_output(&mut reader, &mut captured).await.unwrap();
         assert!(reader.is_empty(), "excess output must still be consumed");
         assert_eq!(captured, bytes[..MAX_OUTPUT_BYTES]);
+    }
+
+    #[test]
+    fn capture_futures_keep_large_buffers_off_the_stack() {
+        // Inline scratch arrays grow every enclosing async state machine and
+        // can overflow the Windows CLI's main-thread stack before execution.
+        // Use generous budgets rather than depending on an exact compiler ABI.
+        let runner = BoundedRunner::new(Path::new("."));
+        let args = vec!["git".to_string(), "status".to_string()];
+        let run = runner.run(&args);
+        let indirect = runner.run_indirect(&args, &args);
+        let mut captured = Vec::new();
+        let capture = drain_output(&b""[..], &mut captured);
+        let sizes = (
+            std::mem::size_of_val(&capture),
+            std::mem::size_of_val(&run),
+            std::mem::size_of_val(&indirect),
+        );
+        assert!(
+            sizes.0 < 1024 && sizes.1 < 8192 && sizes.2 < 8192,
+            "inline future bytes (capture, run, run_indirect): {sizes:?}"
+        );
     }
 
     struct ProbeReader {
