@@ -97,6 +97,23 @@ present `admission_scope` policy check. Commands are classified before execution
 commands run, `RequiresApproval` commands run only when `run.allow_approval_commands` is set,
 `Forbidden` commands never run. Missing or failed checks fail closed.
 
+The command deadline bounds the runner's async call, including direct-child execution and
+stdout/stderr capture; the earlier whole-run deadline takes precedence. Output is drained to EOF
+while retaining at most 64 KiB per stream, so verbose checks do not fail just because their captured
+evidence is capped. A timeout or capture error cannot count as a passing check. Direct-child cleanup
+has a one-second bounded grace period.
+
+Output capture uses cancellable OS reads on every supported platform. On Windows, private,
+single-instance inbound named pipes use overlapped reads, so a descendant retaining stdout/stderr
+cannot leave a blocking capture task that delays Tokio runtime destruction after timeout or
+cancellation. Each stream has a separate pipe and bounded evidence prefix. The child still writes
+through ordinary synchronous stdout/stderr handles.
+
+The runner only terminates its direct child; descendants may survive and later see a closed output
+pipe. It does not terminate process trees or provide an OS sandbox. This capture guarantee does not
+bound unrelated application shutdown work. Use an appropriate isolated execution environment for
+untrusted code.
+
 ### Challenge and repair
 
 An independent challenger model reviews the candidate and produces a structured verdict.
