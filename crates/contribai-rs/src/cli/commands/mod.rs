@@ -15,6 +15,7 @@ pub mod demo;
 pub mod doctor;
 pub mod dream;
 pub mod encrypt_token;
+pub mod harness;
 pub mod hunt;
 pub mod init;
 pub mod leaderboard;

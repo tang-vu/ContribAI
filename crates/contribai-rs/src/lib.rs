@@ -18,6 +18,7 @@ pub mod core;
 pub mod exec;
 pub mod generator;
 pub mod github;
+pub mod harness;
 pub mod issues;
 pub mod llm;
 pub mod mcp;

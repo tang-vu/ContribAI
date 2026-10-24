@@ -165,6 +165,8 @@ mod capability_tests {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Bounded read-only agent runs, local history, and inspectable events
+    Harness(commands::harness::HarnessArgs),
     /// Discover repositories and produce reviewable contribution candidates
     Run {
         /// Target language filter
@@ -603,6 +605,9 @@ impl Cli {
         };
 
         match command {
+            Commands::Harness(args) => {
+                commands::harness::run_harness(self.config.as_deref(), args).await
+            }
             Commands::Run {
                 language,
                 stars,
