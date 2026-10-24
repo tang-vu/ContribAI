@@ -12,11 +12,20 @@ fn command() -> Command {
 
 #[tokio::test]
 async fn help_and_version_start_without_configuration() {
+    // clap renders the invoked executable name in usage, including .exe on
+    // Windows, while --version uses the configured application name.
+    let executable = std::path::Path::new(env!("CARGO_BIN_EXE_contribai"))
+        .file_name()
+        .unwrap()
+        .to_string_lossy();
     for (args, expected) in [
-        (vec!["--help"], "Usage: contribai"),
-        (vec!["--version"], "contribai "),
-        (vec!["version"], "contribai "),
-        (vec!["harness", "--help"], "Usage: contribai harness"),
+        (vec!["--help"], format!("Usage: {executable}")),
+        (vec!["--version"], "contribai ".to_owned()),
+        (vec!["version"], "contribai ".to_owned()),
+        (
+            vec!["harness", "--help"],
+            format!("Usage: {executable} harness"),
+        ),
     ] {
         let result = command().args(args).output().await.unwrap();
         assert!(
@@ -24,7 +33,11 @@ async fn help_and_version_start_without_configuration() {
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
-        assert!(String::from_utf8_lossy(&result.stdout).contains(expected));
+        assert!(
+            String::from_utf8_lossy(&result.stdout).contains(&expected),
+            "expected {expected:?} in {}",
+            String::from_utf8_lossy(&result.stdout)
+        );
     }
 }
 
