@@ -456,9 +456,19 @@ mod tests {
         assert!(HarnessSnapshot::load(&root.join("binary.txt"), &[])
             .await
             .is_err());
-        assert!(HarnessSnapshot::load(&root.join("directory/.."), &[])
-            .await
-            .is_err());
+        // PathBuf::join normalizes '..' away for Windows verbatim roots
+        // returned by canonicalize. Build raw OS text so this fixture actually
+        // presents a ParentDir to the validator on every platform.
+        let mut traversal = root.as_os_str().to_owned();
+        traversal.push(std::path::MAIN_SEPARATOR_STR);
+        traversal.push("directory");
+        traversal.push(std::path::MAIN_SEPARATOR_STR);
+        traversal.push("..");
+        let traversal = PathBuf::from(traversal);
+        assert!(traversal
+            .components()
+            .any(|part| matches!(part, Component::ParentDir)));
+        assert!(HarnessSnapshot::load(&traversal, &[]).await.is_err());
     }
 
     #[tokio::test]
