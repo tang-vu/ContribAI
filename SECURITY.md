@@ -52,6 +52,13 @@ refusal of unauthenticated public web binds.
 
 See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for assumptions, abuse cases, and residual risk.
 
+The [agent harness](docs/AGENT_HARNESS.md) exposes only immutable, explicitly selected
+file reads. It cannot execute commands, edit files, or submit contributions. Its
+metadata journal omits raw tasks, responses, and file contents. Selected content
+is still sent to the configured model provider; filename filtering is not secret
+scanning. Token reservations are not a monetary cap, and provider transport
+buffering and concurrent filesystem races remain documented limitations.
+
 ## Operator guidance
 
 - Prefer a fine-grained GitHub token scoped only to repositories and operations you need.

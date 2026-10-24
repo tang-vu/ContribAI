@@ -1,5 +1,7 @@
 # Minimal safe ContribAI configuration.
 # Secrets are intentionally omitted; use environment variables.
+# Read-only harness: contribai --config config.example.yaml harness run TASK --file README.md
+# Only the llm section is read by the harness. For local Ollama, see docs/AGENT_HARNESS.md.
 
 github:
   token: ""                    # GITHUB_TOKEN or `gh auth token`

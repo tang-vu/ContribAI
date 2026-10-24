@@ -1,5 +1,10 @@
 # Contributing to ContribAI
 
+The [read-only agent harness](docs/AGENT_HARNESS.md) is part of the Rust product.
+Changes must preserve explicit file selection, bounded execution, metadata-only
+history, and the separation from contribution admission. Test live adapters with
+loopback fixtures; never describe a fixture as a verified real-model integration.
+
 Thanks for helping build a healthier interface between AI agents and open source maintainers.
 
 ## Before you start

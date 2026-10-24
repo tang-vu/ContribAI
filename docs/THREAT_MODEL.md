@@ -35,6 +35,15 @@ The LLM is never an authorization authority. Repository content can influence an
 generation, but cannot grant write capability, manufacture consent, expand a permit, or approve its
 own output.
 
+The read-only [agent harness](AGENT_HARNESS.md) has a smaller capability boundary:
+an immutable operator-selected snapshot, strict JSON actions, and only list/read
+tools. No model response grants execution or write access. Its content-minimized
+SQLite events are diagnostics, not admission evidence or signed attestations.
+Existing provider transport buffers are not memory-bounded by the harness, and
+snapshot loading assumes a stable source filesystem rather than an adversarial
+concurrent writer. Cancellation stops the local asynchronous wait, not remote
+billing or already-started inference. See the harness guide for exact limits.
+
 ## Primary threats and controls
 
 | Threat | Control | Residual risk |

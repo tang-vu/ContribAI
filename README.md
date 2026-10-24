@@ -18,6 +18,13 @@ public repository as permission to write. Submission is a separate capability th
 by the operator, authorized by the target maintainer, bounded by policy, reviewed by a human, and
 published as a draft pull request with an evidence receipt.
 
+The new [bounded agent harness](docs/AGENT_HARNESS.md) adds multi-turn, read-only
+repository tasks using local or configured hosted models, explicit file selection,
+resource limits, cancellation, and inspectable local run history. Try it without
+credentials or network access: `contribai harness demo --json`. This is a labeled
+offline fixture; `harness run` uses a real configured provider. The harness never
+grants contribution submission authority.
+
 The [project website](https://contribai-topaz.vercel.app/) is a dependency-free introduction and
 read-only onboarding path. It is informational only and exposes no ContribAI runtime capability.
 

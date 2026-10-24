@@ -13,6 +13,17 @@ use tracing::info;
 use crate::core::config::LlmConfig;
 use crate::core::error::{ContribError, Result};
 
+// A malformed provider response may contain arbitrary UTF-8. Never slice
+// an error preview at a byte index that can split a code point.
+fn parse_gemini_json(body: &str) -> Result<Value> {
+    serde_json::from_str(body).map_err(|error| {
+        let preview: String = body.chars().take(500).collect();
+        ContribError::Llm(format!(
+            "Gemini JSON parse: {error} — response preview: {preview}"
+        ))
+    })
+}
+
 // ── SSE streaming fallback helpers ────────────────────────────────────────────
 
 fn is_retryable_status(s: u16) -> bool {
@@ -473,17 +484,7 @@ impl GeminiProvider {
             .await
             .map_err(|e| ContribError::Llm(format!("Gemini response read: {}", e)))?;
 
-        let data: Value = serde_json::from_str(&body_text).map_err(|e| {
-            let preview = if body_text.len() > 500 {
-                &body_text[..500]
-            } else {
-                &body_text
-            };
-            ContribError::Llm(format!(
-                "Gemini JSON parse: {} — response preview: {}",
-                e, preview
-            ))
-        })?;
+        let data = parse_gemini_json(&body_text)?;
 
         if !status.is_success() {
             let error_msg = data["error"]["message"].as_str().unwrap_or("Unknown error");
@@ -557,18 +558,7 @@ impl LlmProvider for GeminiProvider {
             .await
             .map_err(|e| ContribError::Llm(format!("Gemini response read: {}", e)))?;
 
-        let data: Value = serde_json::from_str(&body_text).map_err(|e| {
-            // Log first 500 chars of body for debugging
-            let preview = if body_text.len() > 500 {
-                &body_text[..500]
-            } else {
-                &body_text
-            };
-            ContribError::Llm(format!(
-                "Gemini JSON parse: {} — response preview: {}",
-                e, preview
-            ))
-        })?;
+        let data = parse_gemini_json(&body_text)?;
 
         if !status.is_success() {
             let error_msg = data["error"]["message"].as_str().unwrap_or("Unknown error");
@@ -653,17 +643,7 @@ impl LlmProvider for GeminiProvider {
             .await
             .map_err(|e| ContribError::Llm(format!("Gemini response read: {}", e)))?;
 
-        let data: Value = serde_json::from_str(&body_text).map_err(|e| {
-            let preview = if body_text.len() > 500 {
-                &body_text[..500]
-            } else {
-                &body_text
-            };
-            ContribError::Llm(format!(
-                "Gemini JSON parse: {} — response preview: {}",
-                e, preview
-            ))
-        })?;
+        let data = parse_gemini_json(&body_text)?;
 
         let text = data["candidates"][0]["content"]["parts"][0]["text"]
             .as_str()
@@ -1028,7 +1008,6 @@ pub struct OllamaProvider {
     base_url: String,
     model: String,
     temperature: f64,
-    #[allow(dead_code)]
     max_tokens: u32,
 }
 
@@ -1076,7 +1055,7 @@ impl LlmProvider for OllamaProvider {
         messages: &[ChatMessage],
         system: Option<&str>,
         temperature: Option<f64>,
-        _max_tokens: Option<u32>,
+        max_tokens: Option<u32>,
     ) -> Result<String> {
         let temp = temperature.unwrap_or(self.temperature);
 
@@ -1097,7 +1076,7 @@ impl LlmProvider for OllamaProvider {
                 "model": self.model,
                 "messages": msgs,
                 "stream": false,
-                "options": { "temperature": temp },
+                "options": { "temperature": temp, "num_predict": max_tokens.unwrap_or(self.max_tokens) },
             }))
             .send()
             .await
@@ -1387,6 +1366,15 @@ pub fn create_llm_provider_raw(config: &LlmConfig) -> Result<Box<dyn LlmProvider
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_gemini_utf8_response_is_an_error_not_a_panic() {
+        let body = format!("{}é{}", "x".repeat(499), "z".repeat(100));
+        let error = parse_gemini_json(&body).unwrap_err().to_string();
+        assert!(error.ends_with('é'));
+        assert!(!error.ends_with('z'));
+        assert!(parse_gemini_json("{\"ok\":true}").is_ok());
+    }
 
     #[test]
     fn test_chat_message_constructors() {

@@ -131,6 +131,8 @@ web:
   tls_cert_path: null
   tls_key_path: null
 
+# The read-only harness uses only this file's llm section and explicit --file inputs.
+# See docs/AGENT_HARNESS.md for local Ollama setup and per-run resource limits.
 plugins: []
 
 enterprise:

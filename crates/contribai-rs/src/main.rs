@@ -3,8 +3,7 @@ use tracing_subscriber::EnvFilter;
 
 mod cli;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     // Initialize tracing — write to stderr so MCP stdio channel stays clean
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -14,6 +13,10 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
+    // Parse before entering Tokio: clap's debug-build command constructors need
+    // headroom on Windows' small default main-thread stack. Heap-pin the command
+    // future so runtime entry-point frames do not embed/copy the dispatcher too.
+    // This does not increase the stack size or change any command's limits.
     let cli = cli::Cli::parse();
-    cli.run().await
+    tokio::runtime::Runtime::new()?.block_on(Box::pin(cli.run()))
 }

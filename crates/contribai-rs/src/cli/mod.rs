@@ -45,7 +45,10 @@ mod capability_tests {
         let cli = Cli::try_parse_from(["contribai", "run"]).expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Run { submit: false, .. })
+            Some(Commands::Execution(ExecutionCommands::Run {
+                submit: false,
+                ..
+            }))
         ));
     }
 
@@ -54,9 +57,9 @@ mod capability_tests {
         let cli = Cli::try_parse_from(["contribai", "mcp-server"]).expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::McpServer {
+            Some(Commands::Execution(ExecutionCommands::McpServer {
                 allow_writes: false
-            })
+            }))
         ));
     }
 
@@ -72,11 +75,11 @@ mod capability_tests {
         .expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::ConsentCheck {
+            Some(Commands::Evidence(EvidenceCommands::ConsentCheck {
                 json: true,
                 require_consent: true,
                 ..
-            })
+            }))
         ));
     }
 
@@ -86,11 +89,11 @@ mod capability_tests {
             .expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Contribute {
+            Some(Commands::Evidence(EvidenceCommands::Contribute {
                 dry_run: false,
                 submit: false,
                 ..
-            })
+            }))
         ));
     }
 
@@ -107,11 +110,11 @@ mod capability_tests {
         .expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Contribute {
+            Some(Commands::Evidence(EvidenceCommands::Contribute {
                 dry_run: true,
                 submit: false,
                 ..
-            })
+            }))
         ));
     }
 
@@ -120,10 +123,10 @@ mod capability_tests {
         let cli = Cli::try_parse_from(["contribai", "patrol"]).expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Patrol {
+            Some(Commands::Execution(ExecutionCommands::Patrol {
                 dry_run: false,
                 respond: false,
-            })
+            }))
         ));
     }
 
@@ -132,10 +135,10 @@ mod capability_tests {
         let cli = Cli::try_parse_from(["contribai", "demo", "--json"]).expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Demo {
+            Some(Commands::Evidence(EvidenceCommands::Demo {
                 json: true,
                 manifest: None
-            })
+            }))
         ));
     }
 
@@ -153,18 +156,37 @@ mod capability_tests {
         .expect("valid CLI");
         assert!(matches!(
             cli.command,
-            Some(Commands::Admissions {
+            Some(Commands::Configuration(ConfigurationCommands::Admissions {
                 repository: Some(repository),
                 decision: Some(decision),
                 json: true,
                 ..
-            }) if repository == "owner/repo" && decision == "blocked"
+            })) if repository == "owner/repo" && decision == "blocked"
         ));
     }
 }
 
+// Keep each clap derive small: one large enum makes the generated parser build
+// every subcommand in a single stack frame, overflowing the Windows main stack.
+// Flattening preserves the public command names and their original help order.
 #[derive(Subcommand)]
 enum Commands {
+    #[command(flatten)]
+    Execution(ExecutionCommands),
+    #[command(flatten)]
+    Evidence(EvidenceCommands),
+    #[command(flatten)]
+    Configuration(ConfigurationCommands),
+    #[command(flatten)]
+    Operations(OperationsCommands),
+    #[command(flatten)]
+    Diagnostics(DiagnosticsCommands),
+}
+
+#[derive(Subcommand)]
+enum ExecutionCommands {
+    /// Bounded read-only agent runs, local history, and inspectable events
+    Harness(commands::harness::HarnessArgs),
     /// Discover repositories and produce reviewable contribution candidates
     Run {
         /// Target language filter
@@ -279,7 +301,10 @@ enum Commands {
         #[arg(long, default_value = "9876")]
         port: u16,
     },
+}
 
+#[derive(Subcommand)]
+enum EvidenceCommands {
     /// Show contribution statistics
     Stats,
 
@@ -394,7 +419,10 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+}
 
+#[derive(Subcommand)]
+enum ConfigurationCommands {
     /// Show submitted PRs and their statuses
     Status {
         /// Filter by status (open, merged, closed)
@@ -466,7 +494,10 @@ enum Commands {
     },
 
     ConfigList,
+}
 
+#[derive(Subcommand)]
+enum OperationsCommands {
     // ── Parity commands (matches Python CLI) ──────────────────────────────────
     /// Show contribution leaderboard and merge rate statistics
     Leaderboard {
@@ -524,7 +555,10 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+}
 
+#[derive(Subcommand)]
+enum DiagnosticsCommands {
     /// Run environment diagnostics — check config, auth, LLM, and system health
     Doctor,
 
@@ -603,13 +637,16 @@ impl Cli {
         };
 
         match command {
-            Commands::Run {
+            Commands::Execution(ExecutionCommands::Harness(args)) => {
+                commands::harness::run_harness(self.config.as_deref(), args).await
+            }
+            Commands::Execution(ExecutionCommands::Run {
                 language,
                 stars,
                 dry_run,
                 submit,
                 approve,
-            } => {
+            }) => {
                 commands::run::run_run(
                     self.config.as_deref(),
                     language,
@@ -620,14 +657,14 @@ impl Cli {
                 )
                 .await
             }
-            Commands::Hunt {
+            Commands::Execution(ExecutionCommands::Hunt {
                 rounds,
                 delay,
                 language,
                 dry_run,
                 submit,
                 approve,
-            } => {
+            }) => {
                 commands::hunt::run_hunt(
                     self.config.as_deref(),
                     rounds,
@@ -639,25 +676,25 @@ impl Cli {
                 )
                 .await
             }
-            Commands::Patrol { dry_run, respond } => {
+            Commands::Execution(ExecutionCommands::Patrol { dry_run, respond }) => {
                 commands::patrol::run_patrol(self.config.as_deref(), dry_run || !respond).await
             }
-            Commands::Watchlist { dry_run, submit } => {
+            Commands::Execution(ExecutionCommands::Watchlist { dry_run, submit }) => {
                 commands::watchlist::run_watchlist(self.config.as_deref(), dry_run, submit).await
             }
-            Commands::Target {
+            Commands::Execution(ExecutionCommands::Target {
                 url,
                 dry_run,
                 submit,
-            } => commands::target::run_target(self.config.as_deref(), url, dry_run, submit).await,
-            Commands::Analyze { url } => {
+            }) => commands::target::run_target(self.config.as_deref(), url, dry_run, submit).await,
+            Commands::Evidence(EvidenceCommands::Analyze { url }) => {
                 commands::analyze::run_analyze(self.config.as_deref(), url).await
             }
-            Commands::ConsentCheck {
+            Commands::Evidence(EvidenceCommands::ConsentCheck {
                 url,
                 json,
                 require_consent,
-            } => {
+            }) => {
                 commands::consent_check::run_consent_check(
                     self.config.as_deref(),
                     url,
@@ -666,18 +703,18 @@ impl Cli {
                 )
                 .await
             }
-            Commands::Solve {
+            Commands::Evidence(EvidenceCommands::Solve {
                 url,
                 dry_run,
                 submit,
-            } => commands::solve::run_solve(self.config.as_deref(), url, dry_run, submit).await,
-            Commands::Contribute {
+            }) => commands::solve::run_solve(self.config.as_deref(), url, dry_run, submit).await,
+            Commands::Evidence(EvidenceCommands::Contribute {
                 url,
                 issue,
                 dry_run,
                 submit,
                 json,
-            } => {
+            }) => {
                 commands::contribute::run_contribute(
                     self.config.as_deref(),
                     &url,
@@ -688,68 +725,72 @@ impl Cli {
                 )
                 .await
             }
-            Commands::Runs {
+            Commands::Evidence(EvidenceCommands::Runs {
                 repository,
                 state,
                 limit,
                 json,
-            } => commands::contribute::run_runs(
+            }) => commands::contribute::run_runs(
                 self.config.as_deref(),
                 repository.as_deref(),
                 state.as_deref(),
                 limit,
                 json,
             ),
-            Commands::InspectRun { run_id, json } => {
+            Commands::Evidence(EvidenceCommands::InspectRun { run_id, json }) => {
                 commands::contribute::run_inspect_run(self.config.as_deref(), &run_id, json)
             }
-            Commands::Conformance { json } => commands::conformance::run_conformance(json),
-            Commands::McpServer { allow_writes } => {
+            Commands::Evidence(EvidenceCommands::Conformance { json }) => {
+                commands::conformance::run_conformance(json)
+            }
+            Commands::Execution(ExecutionCommands::McpServer { allow_writes }) => {
                 commands::mcp_server::run_mcp_server(self.config.as_deref(), allow_writes).await
             }
-            Commands::Stats => commands::stats::run_stats(self.config.as_deref()).await,
-            Commands::Status { filter, limit } => {
+            Commands::Evidence(EvidenceCommands::Stats) => {
+                commands::stats::run_stats(self.config.as_deref()).await
+            }
+            Commands::Configuration(ConfigurationCommands::Status { filter, limit }) => {
                 commands::status::run_status(self.config.as_deref(), filter, limit).await
             }
-            Commands::Admissions {
+            Commands::Configuration(ConfigurationCommands::Admissions {
                 repository,
                 decision,
                 limit,
                 json,
-            } => commands::admissions::run_admissions(
+            }) => commands::admissions::run_admissions(
                 self.config.as_deref(),
                 repository.as_deref(),
                 decision.as_deref(),
                 limit,
                 json,
             ),
-            Commands::Version => {
+            Commands::Evidence(EvidenceCommands::Version) => {
                 print_banner();
                 println!("contribai {} (Rust)", contribai::VERSION);
                 Ok(())
             }
-            Commands::Demo { json, manifest } => {
+            Commands::Evidence(EvidenceCommands::Demo { json, manifest }) => {
                 commands::demo::run_demo(json, manifest.as_deref())
             }
             #[cfg(feature = "web")]
-            Commands::WebServer { host, port } => {
+            Commands::Execution(ExecutionCommands::WebServer { host, port }) => {
                 commands::web_server::run_web_server(self.config.as_deref(), host, port).await
             }
-            Commands::Serve { host, port } => {
+            Commands::Execution(ExecutionCommands::Serve { host, port }) => {
                 commands::serve::run_serve(self.config.as_deref(), host, port).await
             }
             #[cfg(not(feature = "web"))]
-            Commands::WebServer { .. } => {
+            Commands::Execution(ExecutionCommands::WebServer { .. }) => {
                 anyhow::bail!("Web dashboard not available. Build with --features web");
             }
             #[cfg(not(feature = "web"))]
-            Commands::Serve { .. } => {
+            Commands::Execution(ExecutionCommands::Serve { .. }) => {
                 anyhow::bail!("Pipeline server not available. Build with --features web");
             }
-            Commands::Schedule { cron } => {
+            Commands::Configuration(ConfigurationCommands::Schedule { cron }) => {
                 commands::schedule::run_schedule(self.config.as_deref(), cron).await
             }
-            Commands::Interactive => {
+            Commands::Operations(OperationsCommands::Interactive) => {
                 #[cfg(feature = "tui")]
                 {
                     let config = load_config(self.config.as_deref())?;
@@ -760,58 +801,78 @@ impl Cli {
                     anyhow::bail!("TUI not available. Build with --features tui");
                 }
             }
-            Commands::Leaderboard { limit } => {
+            Commands::Operations(OperationsCommands::Leaderboard { limit }) => {
                 commands::leaderboard::run_leaderboard(self.config.as_deref(), limit)
             }
-            Commands::Models { task } => commands::models::run_models(task.as_deref()),
-            Commands::Templates { r#type } => commands::templates::run_templates(r#type.as_deref()),
-            Commands::Profile { name, dry_run } => {
+            Commands::Operations(OperationsCommands::Models { task }) => {
+                commands::models::run_models(task.as_deref())
+            }
+            Commands::Operations(OperationsCommands::Templates { r#type }) => {
+                commands::templates::run_templates(r#type.as_deref())
+            }
+            Commands::Operations(OperationsCommands::Profile { name, dry_run }) => {
                 let config = load_config(self.config.as_deref())?;
                 commands::profile::run_profile(&name, dry_run, &config).await
             }
-            Commands::Cleanup { yes } => {
+            Commands::Operations(OperationsCommands::Cleanup { yes }) => {
                 commands::cleanup::run_cleanup(self.config.as_deref(), yes).await
             }
-            Commands::NotifyTest => {
+            Commands::Operations(OperationsCommands::NotifyTest) => {
                 commands::notify_test::run_notify_test(self.config.as_deref()).await
             }
-            Commands::SystemStatus => {
+            Commands::Operations(OperationsCommands::SystemStatus) => {
                 commands::system_status::run_system_status(self.config.as_deref()).await
             }
-            Commands::Dream { force } => commands::dream::run_dream(self.config.as_deref(), force),
-            Commands::Doctor => commands::doctor::run_doctor(self.config.as_deref()).await,
-            Commands::Logs { tail, filter, json } => {
+            Commands::Operations(OperationsCommands::Dream { force }) => {
+                commands::dream::run_dream(self.config.as_deref(), force)
+            }
+            Commands::Diagnostics(DiagnosticsCommands::Doctor) => {
+                commands::doctor::run_doctor(self.config.as_deref()).await
+            }
+            Commands::Diagnostics(DiagnosticsCommands::Logs { tail, filter, json }) => {
                 commands::logs::run_logs(tail, filter.as_deref(), json)
             }
-            Commands::Prs {
+            Commands::Diagnostics(DiagnosticsCommands::Prs {
                 status,
                 limit,
                 json,
-            } => commands::prs::run_prs(self.config.as_deref(), &status, limit, json),
-            Commands::CircuitBreaker => {
+            }) => commands::prs::run_prs(self.config.as_deref(), &status, limit, json),
+            Commands::Diagnostics(DiagnosticsCommands::CircuitBreaker) => {
                 commands::circuit_breaker::run_circuit_breaker_status(self.config.as_deref()).await
             }
-            Commands::EncryptToken { token, passphrase } => {
+            Commands::Diagnostics(DiagnosticsCommands::EncryptToken { token, passphrase }) => {
                 commands::encrypt_token::run_encrypt_token(token.as_deref(), passphrase.as_deref())
             }
-            Commands::CacheStats => commands::cache_stats::run_cache_stats(self.config.as_deref()),
-            Commands::CacheClear { yes } => {
+            Commands::Diagnostics(DiagnosticsCommands::CacheStats) => {
+                commands::cache_stats::run_cache_stats(self.config.as_deref())
+            }
+            Commands::Diagnostics(DiagnosticsCommands::CacheClear { yes }) => {
                 commands::cache_clear::run_cache_clear(self.config.as_deref(), yes)
             }
-            Commands::Init { output } => {
+            Commands::Configuration(ConfigurationCommands::Init { output }) => {
                 commands::init::run_init(output.as_deref(), output.clone())
             }
-            Commands::Login => commands::login::run_login_check(self.config.as_deref()).await,
-            Commands::Config => commands::config::run_config(self.config.as_deref()),
-            Commands::ConfigGet { key } => {
+            Commands::Configuration(ConfigurationCommands::Login) => {
+                commands::login::run_login_check(self.config.as_deref()).await
+            }
+            Commands::Configuration(ConfigurationCommands::Config) => {
+                commands::config::run_config(self.config.as_deref())
+            }
+            Commands::Configuration(ConfigurationCommands::ConfigGet { key }) => {
                 commands::config::run_config_get(self.config.as_deref(), key)
             }
-            Commands::ConfigSet { key, value } => {
+            Commands::Configuration(ConfigurationCommands::ConfigSet { key, value }) => {
                 commands::config::run_config_set(self.config.as_deref(), key, value)
             }
-            Commands::ConfigList => commands::config::run_config_list(self.config.as_deref()),
-            Commands::Undo { yes } => commands::undo::run_undo(self.config.as_deref(), yes),
-            Commands::Completions { shell } => commands::completions::run_completions(shell),
+            Commands::Configuration(ConfigurationCommands::ConfigList) => {
+                commands::config::run_config_list(self.config.as_deref())
+            }
+            Commands::Diagnostics(DiagnosticsCommands::Undo { yes }) => {
+                commands::undo::run_undo(self.config.as_deref(), yes)
+            }
+            Commands::Diagnostics(DiagnosticsCommands::Completions { shell }) => {
+                commands::completions::run_completions(shell)
+            }
         }
     }
 }
@@ -866,81 +927,81 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
     println!();
 
     Ok(match selection {
-        0 => Commands::Interactive,
-        1 => Commands::Run {
+        0 => Commands::Operations(OperationsCommands::Interactive),
+        1 => Commands::Execution(ExecutionCommands::Run {
             language: None,
             stars: None,
             dry_run: false,
             submit: false,
             approve: false,
-        },
+        }),
         2 => {
             let url: String = dialoguer::Input::new()
                 .with_prompt("Repository URL")
                 .interact_text()?;
-            Commands::Target {
+            Commands::Execution(ExecutionCommands::Target {
                 url,
                 dry_run: true,
                 submit: false,
-            }
+            })
         }
         3 => {
             let url: String = dialoguer::Input::new()
                 .with_prompt("Repository URL")
                 .interact_text()?;
-            Commands::Analyze { url }
+            Commands::Evidence(EvidenceCommands::Analyze { url })
         }
         4 => {
             let url: String = dialoguer::Input::new()
                 .with_prompt("Repository URL")
                 .interact_text()?;
-            Commands::Solve {
+            Commands::Evidence(EvidenceCommands::Solve {
                 url,
                 dry_run: true,
                 submit: false,
-            }
+            })
         }
-        5 => Commands::Patrol {
+        5 => Commands::Execution(ExecutionCommands::Patrol {
             dry_run: true,
             respond: false,
-        },
-        6 => Commands::Hunt {
+        }),
+        6 => Commands::Execution(ExecutionCommands::Hunt {
             rounds: 5,
             delay: 30,
             language: None,
             dry_run: true,
             submit: false,
             approve: false,
-        },
-        7 => Commands::Stats,
-        8 => Commands::Leaderboard { limit: 20 },
-        9 => Commands::Status {
+        }),
+        7 => Commands::Evidence(EvidenceCommands::Stats),
+        8 => Commands::Operations(OperationsCommands::Leaderboard { limit: 20 }),
+        9 => Commands::Configuration(ConfigurationCommands::Status {
             filter: None,
             limit: 20,
-        },
-        10 => Commands::Models { task: None },
-        11 => Commands::Templates { r#type: None },
+        }),
+        10 => Commands::Operations(OperationsCommands::Models { task: None }),
+        11 => Commands::Operations(OperationsCommands::Templates { r#type: None }),
         12 => {
             let name: String = dialoguer::Input::new()
                 .with_prompt("Profile name (or 'list' to see all)")
                 .default("list".into())
                 .interact_text()?;
-            Commands::Profile {
+            Commands::Operations(OperationsCommands::Profile {
                 name,
                 dry_run: false,
-            }
+            })
         }
-        13 => Commands::Cleanup { yes: false },
-        14 => Commands::WebServer {
+        13 => Commands::Operations(OperationsCommands::Cleanup { yes: false }),
+        14 => Commands::Execution(ExecutionCommands::WebServer {
             host: "127.0.0.1".into(),
             port: 8787,
-        },
-        15 => Commands::SystemStatus,
-        16 => Commands::NotifyTest,
-        17 => Commands::Dream { force: false },
-        18 => Commands::Doctor,
-        19 => Commands::CircuitBreaker,
-        20 => Commands::Config,
+        }),
+        15 => Commands::Operations(OperationsCommands::SystemStatus),
+        16 => Commands::Operations(OperationsCommands::NotifyTest),
+        17 => Commands::Operations(OperationsCommands::Dream { force: false }),
+        18 => Commands::Diagnostics(DiagnosticsCommands::Doctor),
+        19 => Commands::Diagnostics(DiagnosticsCommands::CircuitBreaker),
+        20 => Commands::Configuration(ConfigurationCommands::Config),
         21 => {
             let key: String = dialoguer::Input::new()
                 .with_prompt("Config key (e.g. llm.provider)")
@@ -948,14 +1009,14 @@ fn run_interactive_menu() -> anyhow::Result<Commands> {
             let value: String = dialoguer::Input::new()
                 .with_prompt(format!("New value for {}", key))
                 .interact_text()?;
-            Commands::ConfigSet { key, value }
+            Commands::Configuration(ConfigurationCommands::ConfigSet { key, value })
         }
-        22 => Commands::Login,
-        23 => Commands::Init { output: None },
-        24 => Commands::Demo {
+        22 => Commands::Configuration(ConfigurationCommands::Login),
+        23 => Commands::Configuration(ConfigurationCommands::Init { output: None }),
+        24 => Commands::Evidence(EvidenceCommands::Demo {
             json: false,
             manifest: None,
-        },
+        }),
         _ => std::process::exit(0),
     })
 }
