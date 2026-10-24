@@ -10,17 +10,35 @@ fn command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_contribai"))
 }
 
+#[tokio::test]
+async fn help_and_version_start_without_configuration() {
+    for (args, expected) in [
+        (vec!["--help"], "Usage: contribai"),
+        (vec!["--version"], "contribai "),
+        (vec!["version"], "contribai "),
+        (vec!["harness", "--help"], "Usage: contribai harness"),
+    ] {
+        let result = command().args(args).output().await.unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains(expected));
+    }
+}
+
 // Windows already exercises its small default main-thread stack in every CLI
-// test. Reproduce that constraint on Linux too, rather than hiding the problem
-// with a larger linker stack or testing only release-optimized executables.
+// test. Leave extra headroom by using only 512 KiB on Linux, rather than hiding
+// the problem with a larger linker stack or release-optimized executables.
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn offline_demo_completes_with_one_megabyte_process_stack() {
+async fn offline_demo_completes_with_half_megabyte_process_stack() {
     let temp = tempfile::tempdir().unwrap();
     let result = Command::new("sh")
         .args([
             "-c",
-            "ulimit -s 1024 || exit 1; exec \"$@\"",
+            "ulimit -s 512 || exit 1; exec \"$@\"",
             "small-stack-harness",
             env!("CARGO_BIN_EXE_contribai"),
             "harness",
