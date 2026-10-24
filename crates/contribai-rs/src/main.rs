@@ -15,5 +15,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = cli::Cli::parse();
-    cli.run().await
+    // The dispatcher embeds futures for every command, including large legacy
+    // pipelines. Keep it off the main future's stack on platforms with a small
+    // default stack (notably Windows), without changing any command's limits.
+    Box::pin(cli.run()).await
 }

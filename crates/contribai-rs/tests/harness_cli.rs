@@ -10,6 +10,37 @@ fn command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_contribai"))
 }
 
+// Windows already exercises its small default main-thread stack in every CLI
+// test. Reproduce that constraint on Linux too, rather than hiding the problem
+// with a larger linker stack or testing only release-optimized executables.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn offline_demo_completes_with_one_megabyte_process_stack() {
+    let temp = tempfile::tempdir().unwrap();
+    let result = Command::new("sh")
+        .args([
+            "-c",
+            "ulimit -s 1024 || exit 1; exec \"$@\"",
+            "small-stack-harness",
+            env!("CARGO_BIN_EXE_contribai"),
+            "harness",
+            "--db",
+        ])
+        .arg(temp.path().join("harness.db"))
+        .args(["demo", "--json"])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let outcome: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(outcome["run"]["status"], "completed");
+    assert_eq!(outcome["run"]["tool_calls"], 2);
+}
+
 #[tokio::test]
 async fn offline_demo_and_history_roundtrip_without_configuration() {
     let temp = tempfile::tempdir().unwrap();
