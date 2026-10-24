@@ -99,9 +99,12 @@ async fn offline_demo_and_history_roundtrip_without_configuration() {
 async fn live_run_requires_explicit_config_and_files_without_creating_history() {
     let temp = tempfile::tempdir().unwrap();
     let db = temp.path().join("absent.db");
-    for args in [
-        vec!["run", "task"],
-        vec!["run", "task", "--file", "README.md"],
+    for (args, diagnostic) in [
+        (vec!["run", "task"], "--file"),
+        (
+            vec!["run", "task", "--file", "README.md"],
+            "harness run requires an explicit --config",
+        ),
     ] {
         let result = command()
             .args(["harness", "--db"])
@@ -111,6 +114,11 @@ async fn live_run_requires_explicit_config_and_files_without_creating_history() 
             .await
             .unwrap();
         assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(diagnostic),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
         assert!(!db.exists());
     }
     let result = command()
@@ -121,6 +129,7 @@ async fn live_run_requires_explicit_config_and_files_without_creating_history() 
         .await
         .unwrap();
     assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("harness journal does not exist"));
     assert!(!db.exists());
 }
 
@@ -239,6 +248,11 @@ async fn unsafe_allowlist_is_rejected_before_provider_contact() {
         .await
         .unwrap();
     assert!(!result.status.success());
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("unsafe snapshot path"),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(!db.exists());
     assert!(server.received_requests().await.unwrap().is_empty());
 }
